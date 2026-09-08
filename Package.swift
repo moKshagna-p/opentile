@@ -1,20 +1,16 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
     name: "OpenTile",
     platforms: [.macOS(.v14)],
+    products: [.executable(name: "OpenTile", targets: ["OpenTile"])],
     targets: [
-        .executableTarget(
-            name: "OpenTile",
-            path: "Sources/OpenTile",
-            linkerSettings: [
-                // MultitouchSupport is a private framework: point the linker at it.
-                .unsafeFlags([
-                    "-F/System/Library/PrivateFrameworks/",
-                    "-framework", "MultitouchSupport",
-                ])
-            ]
-        ),
-    ]
+        .target(name: "OpenTileCore"),
+        .target(name: "OpenTileC", publicHeadersPath: "include"),
+        .executableTarget(name: "OpenTile", dependencies: ["OpenTileCore", "OpenTileC"],
+            linkerSettings: [.unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "MultitouchSupport"])]),
+        .testTarget(name: "OpenTileCoreTests", dependencies: ["OpenTileCore"])
+    ],
+    swiftLanguageModes: [.v5]
 )

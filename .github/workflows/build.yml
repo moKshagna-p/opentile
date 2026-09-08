@@ -1,0 +1,35 @@
+name: Build macOS app
+on:
+  push:
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'scripts/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Apple Silicon runner and toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          swift --version
+      - name: Test gesture and insertion behavior
+        run: swift test
+      - name: Package application
+        run: scripts/package.sh
+      - name: Upload downloadable application
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenTile-macOS-arm64
+          path: |
+            .build/package/OpenTile-macOS-arm64.zip
+            .build/package/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30

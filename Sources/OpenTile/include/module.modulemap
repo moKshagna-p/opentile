@@ -1,4 +1,0 @@
-module OpenTileC {
-    header "OpenTileC.h"
-    export *
-}
