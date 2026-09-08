@@ -23,6 +23,7 @@ final class WorkspaceDrawing: NSObject {
     var onStatus: ((String) -> Void)?
     var canTrain: (() -> Bool)?
     private var symbols: [WorkspaceSymbol] = []
+    private var choosingWorkspace = false
     private var training: String?
     private var samples: [WorkspaceSymbol] = []
     private var capture = DrawingCapture()
@@ -83,21 +84,32 @@ final class WorkspaceDrawing: NSObject {
         guard let name = sender.representedObject as? String else { return }
         symbols.removeAll { $0.workspace == name }; save(); rebuildMenu()
     }
-    @objc private func teach() {
+    @objc private func teach() { beginTraining() }
+
+    private func beginTraining(firstDrawing: [[DrawingPoint]]? = nil) {
         guard canTrain?() == true else { onStatus?("Enable gestures before teaching a symbol"); return }
+        guard !choosingWorkspace else { return }
+        choosingWorkspace = true
+        defer { choosingWorkspace = false }
         let alert = NSAlert()
-        alert.messageText = "Teach a workspace symbol"
+        alert.messageText = firstDrawing == nil ? "Teach a workspace symbol" : "Learn this workspace symbol?"
         alert.informativeText = "Enter the exact AeroSpace workspace name (for example 1 or A). Then hold \(chordName), draw with one finger, and release the keys. Repeat three times. You can lift your finger between strokes while holding the keys."
+        if firstDrawing != nil {
+            alert.informativeText = "This drawing has no confident match. Enter the exact AeroSpace workspace name it should open (for example 1 or A). This drawing counts as your first example; draw it two more times to save it. Existing examples for that workspace are replaced only after all three are collected."
+        }
         let input = NSTextField(frame: CGRect(x: 0, y: 0, width: 280, height: 24))
         input.placeholderString = "Workspace name"
-        alert.accessoryView = input; alert.addButton(withTitle: "Start Training"); alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = input; alert.addButton(withTitle: firstDrawing == nil ? "Start Training" : "Learn Symbol"); alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         alert.window.initialFirstResponder = input
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !name.contains("\n"), !name.contains("\r") else { return }
-        cancel(); training = name; samples = []; rebuildMenu()
-        show("Teach \(name) · sample 1 of 3\nHold \(chordName) and draw")
+        guard canTrain?() == true else { return }
+        cancel(); training = name
+        samples = firstDrawing.map { [WorkspaceSymbol(workspace: name, strokes: $0)] } ?? []
+        rebuildMenu()
+        show("Teach \(name) · sample \(samples.count + 1) of 3\nHold \(chordName) and draw")
     }
     @objc private func cancelTraining() { training = nil; samples = []; cancel(); rebuildMenu() }
     private func save() {
@@ -118,6 +130,7 @@ final class WorkspaceDrawing: NSObject {
     func process(_ frames: [TouchBridge.Frame], allowed: Bool) -> Bool {
         let flags = NSEvent.modifierFlags.intersection([.control, .option, .shift, .command])
         let down = flags == chord
+        if choosingWorkspace { held = down; blocked = true; return true }
         let now = ProcessInfo.processInfo.systemUptime
         if !allowed { cancel(); held = down; return down }
         if down && !held {
@@ -149,7 +162,7 @@ final class WorkspaceDrawing: NSObject {
         if training == nil && now - previewTime > 0.12 {
             previewTime = now
             let match = WorkspaceMatcher.match(capture.strokes, symbols: symbols)
-            show(match.map { "Workspace \($0)\nRelease keys to switch · Escape cancels" } ?? "Keep drawing · no confident match\nRelease keys to cancel")
+            show(match.map { "Workspace \($0)\nRelease keys to switch · Escape cancels" } ?? "Keep drawing · no confident match\nRelease keys to teach · Escape cancels")
         }
         return true
     }
@@ -169,6 +182,6 @@ final class WorkspaceDrawing: NSObject {
             } else { show("Sample saved · teach \(training) again\nHold \(chordName) · sample \(samples.count+1) of 3") }
         } else if let workspace = WorkspaceMatcher.match(capture.strokes, symbols: symbols) {
             onSwitch?(workspace)
-        } else { onStatus?(symbols.isEmpty ? "Teach a workspace symbol from the menu first" : "No confident match — workspace unchanged") }
+        } else { beginTraining(firstDrawing: capture.strokes) }
     }
 }
