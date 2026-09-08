@@ -12,52 +12,69 @@ public struct Contact: Sendable {
 
 public enum GestureEvent: Equatable {
     case began(CGPoint), moved(CGPoint), released, cancelled
+    case resizeBegan(Double), resized(Double)
 }
 
 /// A deliberate two-finger pinch followed by a short hold arms the drag.
 /// After release/cancel, all fingers must lift before another gesture can begin.
 public struct GestureRecognizer {
-    private enum Phase { case idle, tracking, holding, dragging, blocked }
+    private enum Phase { case idle, tracking, holding, dragging, resizing, blocked }
     private var phase: Phase = .idle
     private var ids: Set<Int> = []
     private var initialRadius: Double = 0
+    private var resizeMode: Bool?
     private var holdTime: Double = 0
     private var holdPoint = CGPoint.zero
     private var lastTime: Double = -.infinity
     public init() {}
 
     public mutating func cancel() -> GestureEvent? {
-        let active = phase == .dragging
+        let active = phase == .dragging || phase == .resizing
         phase = .blocked
         return active ? .cancelled : nil
     }
 
-    public mutating func update(_ contacts: [Contact], time: Double) -> GestureEvent? {
+    public mutating func update(_ contacts: [Contact], time: Double, optionHeld: Bool = false) -> GestureEvent? {
         guard time.isFinite, time >= lastTime else { return cancel() }
         lastTime = time
         guard contacts.allSatisfy({ $0.point.x.isFinite && $0.point.y.isFinite && (0...1).contains($0.point.x) && (0...1).contains($0.point.y) }), Set(contacts.map(\.id)).count == contacts.count else { return cancel() }
         if contacts.isEmpty {
-            let event: GestureEvent? = phase == .dragging ? .released : nil
+            let event: GestureEvent? = (phase == .dragging || phase == .resizing) ? .released : nil
             phase = .idle
+            resizeMode = nil
             return event
         }
         if phase == .blocked { return nil }
-        if phase == .dragging {
+        // Lock the mode on first contact, including staggered finger placement.
+        if resizeMode == nil { resizeMode = optionHeld }
+        if phase == .dragging || phase == .resizing {
             // A partial lift finishes the gesture; additional/replaced fingers cancel.
             if contacts.count < 2 && Set(contacts.map(\.id)).isSubset(of: ids) {
                 phase = .blocked
                 return .released
             }
             guard contacts.count == 2, Set(contacts.map(\.id)) == ids else { return cancel() }
+            if phase == .resizing { return .resized(1 - Self.radius(contacts) / initialRadius) }
             return .moved(Self.centroid(contacts))
         }
+        if resizeMode == true, contacts.count > 2 { return cancel() }
         guard contacts.count == 2 else { phase = .idle; return nil }
         let center = Self.centroid(contacts)
-        let radius = contacts.reduce(0) { $0 + hypot($1.point.x - center.x, $1.point.y - center.y) } / Double(contacts.count)
+        let radius = Self.radius(contacts)
+        if resizeMode == true, phase != .idle, Set(contacts.map(\.id)) != ids { return cancel() }
         if phase == .idle || Set(contacts.map(\.id)) != ids {
             ids = Set(contacts.map(\.id))
             initialRadius = radius
             phase = .tracking
+        }
+        if resizeMode == true {
+            guard initialRadius > 0.025 else { return nil }
+            let change = 1 - radius / initialRadius
+            if abs(change) >= 0.08, abs(radius - initialRadius) >= 0.01 {
+                phase = .resizing
+                return .resizeBegan(change)
+            }
+            return nil
         }
         if phase == .tracking, initialRadius > 0.025, radius < initialRadius * 0.82 {
             phase = .holding
@@ -76,6 +93,11 @@ public struct GestureRecognizer {
             }
         }
         return nil
+    }
+
+    private static func radius(_ contacts: [Contact]) -> Double {
+        let center = centroid(contacts)
+        return contacts.reduce(0) { $0 + hypot($1.point.x - center.x, $1.point.y - center.y) } / Double(contacts.count)
     }
 
     private static func centroid(_ contacts: [Contact]) -> CGPoint {

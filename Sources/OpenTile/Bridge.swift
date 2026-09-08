@@ -1,10 +1,11 @@
 import Foundation
+import CoreGraphics
 import OpenTileC
 import OpenTileCore
 
 /// The callback only copies values. AppKit and gesture processing stay on the main thread.
 final class TouchBridge {
-    struct Frame { let contacts: [Contact]; let time: Double }
+    struct Frame { let contacts: [Contact]; let time: Double; let optionHeld: Bool }
     private static let lock = NSLock()
     private static var frames: [Frame] = []
     private static var accepting = false
@@ -31,9 +32,9 @@ final class TouchBridge {
             if TouchBridge.accepting {
                 // Overflow is a cancellation, never an accidental drop.
                 if TouchBridge.frames.count >= 256 {
-                    TouchBridge.frames = [.init(contacts: [], time: .nan)]
+                    TouchBridge.frames = [.init(contacts: [], time: .nan, optionHeld: false)]
                 }
-                TouchBridge.frames.append(.init(contacts: contacts, time: time))
+                TouchBridge.frames.append(.init(contacts: contacts, time: time, optionHeld: CGEventSource.flagsState(.combinedSessionState).contains(.maskAlternate)))
             }
             TouchBridge.lock.unlock()
             return 0

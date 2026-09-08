@@ -79,6 +79,16 @@ struct AeroSpace {
         return DesktopSnapshot(source: WindowTile(tile: source, frame: frame), targets: targets)
     }
 
+    func resize(source: Tile, plan: ResizePlan) throws {
+        guard let command = plan.command(windowID: source.id) else { return }
+        let current = try tiles(["--workspace", source.workspace])
+        guard current.contains(where: {
+            $0.id == source.id && $0.pid == source.pid && $0.workspace == source.workspace
+                && $0.layout == source.layout && ["h_tiles", "v_tiles"].contains($0.layout)
+        }) else { throw Failure(message: "The window or layout changed. Start the resize again.") }
+        try run(command)
+    }
+
     func swap(source: Tile, target: Tile) throws {
         let current = try tiles(["--workspace", source.workspace])
         let tiled = current.filter { ["h_tiles", "v_tiles", "h_accordion", "v_accordion"].contains($0.layout) }

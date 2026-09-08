@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var committing = false
     private var generation = 0
     private var snapshot: DesktopSnapshot?
+    private var resizing = false
+    private var latestResize: Double = 0
+    private var readingWorkspace = false
     private var origin = CGPoint.zero
     private var latestPoint = CGPoint.zero
     private var cursor = CGPoint.zero
@@ -115,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recognizer = GestureRecognizer()
         enabled = true
         toggleItem.title = "Pause Gestures"
-        status("Pinch two fingers, hold briefly, then drag")
+        status("Pinch and hold to move · Option + pinch to resize")
     }
 
     private func disable() {
@@ -132,21 +135,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frames = bridge.drain()
         if !frames.isEmpty { lastFrame = ProcessInfo.processInfo.systemUptime }
         for frame in frames {
-            guard let event = recognizer.update(frame.contacts, time: frame.time) else { continue }
+            guard let event = recognizer.update(frame.contacts, time: frame.time, optionHeld: frame.optionHeld) else { continue }
             switch event {
             case .began(let point): begin(point)
             case .moved(let point): move(point)
+            case .resizeBegan(let change):
+                latestResize = change
+                begin(.zero, resize: true)
+            case .resized(let change): resizePreview(change)
             case .released: release()
             case .cancelled: cancel()
             }
         }
-        if snapshot != nil && ProcessInfo.processInfo.systemUptime - lastFrame > 0.4 { cancel() }
+        if (snapshot != nil || readingWorkspace) && ProcessInfo.processInfo.systemUptime - lastFrame > 0.4 { cancel() }
     }
 
-    private func begin(_ point: CGPoint) {
+    private func begin(_ point: CGPoint, resize: Bool = false) {
         guard !committing, let aerospace = AeroSpace.locate() else { return }
         generation += 1
         let token = generation
+        resizing = resize
+        readingWorkspace = true
         origin = point
         latestPoint = point
         status("Reading workspace…")
@@ -154,11 +163,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = Result { try aerospace.snapshot() }
             DispatchQueue.main.async {
                 guard self.generation == token, self.enabled else { return }
+                self.readingWorkspace = false
                 switch result {
                 case .success(let snapshot):
                     self.snapshot = snapshot
-                    self.move(self.latestPoint)
-                    self.status("Center to swap · Edge to insert · Escape cancels")
+                    if self.resizing {
+                        self.resizePreview(self.latestResize)
+                        self.status("Pinch inward to grow · Outward to shrink · Lift to apply")
+                    } else {
+                        self.move(self.latestPoint)
+                        self.status("Center to swap · Edge to insert · Escape cancels")
+                    }
                 case .failure(let error): self.cancel(); self.status(error.localizedDescription)
                 }
             }
@@ -183,8 +198,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else { preview.hide() }
     }
 
+    private func resizePreview(_ change: Double) {
+        latestResize = change
+        guard resizing, let snapshot else { return }
+        let plan = ResizePlan(frame: snapshot.source.frame, layout: snapshot.source.tile.layout, change: change)
+        let dimension = plan.horizontal ? "width" : "height"
+        let amount = plan.amount > 0 ? "+\(plan.amount)" : "\(plan.amount)"
+        preview.show(plan.preview, text: "Resize \(dimension) \(amount) · Lift to apply · Esc cancels", color: .systemOrange)
+    }
+
+    private func releaseResize() {
+        guard let snapshot, let aerospace = AeroSpace.locate() else {
+            clearPreview()
+            if !committing { status("Workspace not ready — resize unchanged") }
+            return
+        }
+        let plan = ResizePlan(frame: snapshot.source.frame, layout: snapshot.source.tile.layout, change: latestResize)
+        clearPreview()
+        guard plan.amount != 0 else { status("Size unchanged — ready for another gesture"); return }
+        committing = true
+        toggleItem.isEnabled = false
+        status("Resizing window…")
+        worker.async {
+            let result = Result { try aerospace.resize(source: snapshot.source.tile, plan: plan) }
+            DispatchQueue.main.async {
+                self.committing = false
+                self.toggleItem.isEnabled = true
+                switch result {
+                case .success: self.status("Window resized · ready for another gesture")
+                case .failure(let error): self.status(error.localizedDescription); NSSound.beep()
+                }
+            }
+        }
+    }
+
     private func release() {
         generation += 1 // invalidates a snapshot still being read
+        if resizing { releaseResize(); return }
         guard let snapshot, let (target, action) = destination, let aerospace = AeroSpace.locate() else {
             clearPreview()
             if !committing { status("No destination selected — layout unchanged") }
@@ -212,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func clearPreview() { snapshot = nil; destination = nil; ghost.hide(); preview.hide() }
+    private func clearPreview() { snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; ghost.hide(); preview.hide() }
     private func cancel() {
         generation += 1
         _ = recognizer.cancel()
@@ -228,8 +278,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc private func showHelp() {
         let alert = NSAlert()
-        alert.messageText = "Move tiles with a deliberate gesture"
-        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nThis version supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.messageText = "Move and resize tiles with gestures"
+        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nThis version supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()

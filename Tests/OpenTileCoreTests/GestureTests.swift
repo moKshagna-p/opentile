@@ -81,6 +81,80 @@ final class GestureTests: XCTestCase {
         var r = GestureRecognizer(); arm(&r)
         XCTAssertEqual(r.update(contacts(), time: 0.2), .cancelled)
     }
+    func testOptionPinchInwardAndOutwardResize() {
+        for radius in [0.10, 0.20] {
+            var r = GestureRecognizer()
+            XCTAssertNil(r.update(contacts(), time: 0, optionHeld: true))
+            let event = r.update(contacts(radius), time: 0.1, optionHeld: true)
+            guard case .resizeBegan(let change) = event else { XCTFail("Expected resize"); continue }
+            XCTAssertEqual(change > 0, radius < 0.15)
+            // Returning to the initial spread undoes the requested change.
+            XCTAssertEqual(r.update(contacts(), time: 0.2, optionHeld: true), .resized(0))
+            XCTAssertEqual(r.update([], time: 0.3), .released)
+            XCTAssertNil(r.update([], time: 0.4))
+        }
+    }
+
+    func testResizeModeLocksAtFirstContactAndResetsAfterLift() {
+        var r = GestureRecognizer()
+        XCTAssertNil(r.update([contacts()[0]], time: 0, optionHeld: true))
+        XCTAssertNil(r.update(contacts(), time: 0.1))
+        guard case .resizeBegan = r.update(contacts(0.1), time: 0.2) else { return XCTFail("Option release must not change mode") }
+        XCTAssertEqual(r.update(Array(contacts().prefix(1)), time: 0.3), .released)
+        XCTAssertNil(r.update(contacts(), time: 0.4))
+        XCTAssertNil(r.update([], time: 0.5))
+        XCTAssertNil(r.update(contacts(), time: 0.6))
+        XCTAssertNil(r.update(contacts(0.1), time: 0.7, optionHeld: true))
+        XCTAssertEqual(r.update(contacts(0.1), time: 1, optionHeld: true), .began(CGPoint(x: 0.5, y: 0.5)))
+    }
+
+    func testResizeIgnoresTranslationAndSmallJitter() {
+        var r = GestureRecognizer()
+        XCTAssertNil(r.update(contacts(), time: 0, optionHeld: true))
+        XCTAssertNil(r.update(contacts(0.149, x: 0.6), time: 0.3, optionHeld: true))
+        XCTAssertNil(r.update(contacts(0.151, x: 0.4), time: 0.6, optionHeld: true))
+        XCTAssertNil(r.update([], time: 1))
+    }
+
+    func testResizeCancellationAndInvalidContacts() {
+        for reason in 0..<5 {
+            var r = GestureRecognizer()
+            _ = r.update(contacts(), time: 0, optionHeld: true)
+            guard case .resizeBegan = r.update(contacts(0.1), time: 0.1) else { return XCTFail("Expected resize") }
+            let event: GestureEvent?
+            switch reason {
+            case 0: event = r.cancel()
+            case 1: event = r.update(contacts() + [Contact(id: 3, x: 0.5, y: 0.5)], time: 0.2)
+            case 2: event = r.update([contacts()[0], Contact(id: 3, x: 0.5, y: 0.5)], time: 0.2)
+            case 3: event = r.update([], time: .nan)
+            default: event = r.update(contacts(), time: 0)
+            }
+            XCTAssertEqual(event, .cancelled)
+            XCTAssertNil(r.update(contacts(0.1), time: 0.3, optionHeld: true))
+            XCTAssertNil(r.update([], time: 0.4))
+        }
+    }
+
+    func testResizePlansBothAxesLimitsAndCommands() {
+        let frame = CGRect(x: -1000, y: -200, width: 800, height: 600)
+        let grow = ResizePlan(frame: frame, layout: "h_tiles", change: 0.25)
+        XCTAssertEqual(grow.amount, 200)
+        XCTAssertEqual(grow.preview, CGRect(x: -1100, y: -200, width: 1000, height: 600))
+        XCTAssertEqual(grow.command(windowID: 42), ["resize", "--window-id", "42", "smart", "+200"])
+        let shrink = ResizePlan(frame: frame, layout: "v_tiles", change: -0.25)
+        XCTAssertEqual(shrink.amount, -150)
+        XCTAssertEqual(shrink.preview, CGRect(x: -1000, y: -125, width: 800, height: 450))
+        XCTAssertEqual(shrink.command(windowID: 42)?.last, "-150")
+        XCTAssertEqual(ResizePlan(frame: frame, layout: "h_tiles", change: 10).amount, 320)
+        XCTAssertEqual(ResizePlan(frame: frame, layout: "v_tiles", change: -10).amount, -240)
+        let small = CGRect(x: 0, y: 0, width: 180, height: 100)
+        XCTAssertEqual(ResizePlan(frame: small, layout: "h_tiles", change: -0.4).amount, -20)
+        XCTAssertEqual(ResizePlan(frame: small, layout: "v_tiles", change: -0.4).amount, 0)
+        XCTAssertNil(ResizePlan(frame: frame, layout: "h_tiles", change: 0).command(windowID: 42))
+        XCTAssertNil(ResizePlan(frame: frame, layout: "h_tiles", change: .nan).command(windowID: 42))
+        XCTAssertNil(ResizePlan(frame: frame, layout: "floating", change: 0.4).command(windowID: 42))
+    }
+
     func testEdgesAndPreviewAtNegativeScreenCoordinates() {
         let rect = CGRect(x: -1000, y: -200, width: 800, height: 600)
         XCTAssertEqual(Edge.nearest(to: CGPoint(x: -999, y: 0), in: rect), .left)
