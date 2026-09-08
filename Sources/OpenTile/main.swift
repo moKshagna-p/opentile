@@ -48,6 +48,7 @@ final class Outline {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let bridge = TouchBridge()
     private let drawing = WorkspaceDrawing()
+    @MainActor private lazy var workspaceTransition = WorkspaceTransition()
     private var recognizer = GestureRecognizer()
     private let worker = DispatchQueue(label: "OpenTile.AeroSpace")
     private var timer: Timer?
@@ -90,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         help.target = self
         let permission = menu.addItem(withTitle: "Accessibility Settings…", action: #selector(openSettings), keyEquivalent: "")
         permission.target = self
+        let capturePermission = menu.addItem(withTitle: "Screen Recording Settings…", action: #selector(openCaptureSettings), keyEquivalent: "")
+        capturePermission.target = self
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit OpenTile", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -279,15 +282,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         committing = true
         toggleItem.isEnabled = false
         status("Switching to workspace \(workspace)…")
-        worker.async {
-            let result = Result { _ = try aerospace.run(["workspace", workspace]) }
-            DispatchQueue.main.async {
+        Task { @MainActor in
+            defer {
                 self.committing = false
                 self.toggleItem.isEnabled = true
-                switch result {
-                case .success: self.status("Workspace \(workspace) · ready")
-                case .failure(let error): self.status(error.localizedDescription)
+            }
+            do {
+                let source = try await self.workspaceCommand(aerospace, ["list-workspaces", "--focused"])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !source.isEmpty else { throw AeroSpace.Failure(message: "Cannot read the current workspace") }
+                let animated = try await self.workspaceTransition.perform(from: source, to: workspace) {
+                    _ = try await self.workspaceCommand(aerospace, ["workspace", workspace])
                 }
+                self.status("Workspace \(workspace) · \(animated ? "ready" : "ready (no animation)")")
+            } catch {
+                self.status(error.localizedDescription)
+            }
+        }
+    }
+
+    private func workspaceCommand(_ aerospace: AeroSpace, _ arguments: [String]) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            worker.async {
+                continuation.resume(with: Result {
+                    String(decoding: try aerospace.run(arguments), as: UTF8.self)
+                })
             }
         }
     }
@@ -307,10 +326,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
+    @objc private func openCaptureSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+    }
     @objc private func showHelp() {
         let alert = NSAlert()
         alert.messageText = "Move and resize tiles with gestures"
-        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Allow Screen Recording when prompted to enable the animation; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
