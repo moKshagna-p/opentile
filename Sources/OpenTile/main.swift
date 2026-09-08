@@ -47,6 +47,7 @@ final class Outline {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let bridge = TouchBridge()
+    private let drawing = WorkspaceDrawing()
     private var recognizer = GestureRecognizer()
     private let worker = DispatchQueue(label: "OpenTile.AeroSpace")
     private var timer: Timer?
@@ -81,6 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         toggleItem = menu.addItem(withTitle: "Enable Gestures", action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
+        drawing.install(in: menu)
+        drawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }
+        drawing.onStatus = { [weak self] message in self?.status(message) }
+        drawing.onSwitch = { [weak self] workspace in self?.switchWorkspace(workspace) }
         let help = menu.addItem(withTitle: "How to Use OpenTile…", action: #selector(showHelp), keyEquivalent: "")
         help.target = self
         let permission = menu.addItem(withTitle: "Accessibility Settings…", action: #selector(openSettings), keyEquivalent: "")
@@ -125,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cancel()
         enabled = false
         bridge.stop()
+        drawing.stop()
         toggleItem.title = "Enable Gestures"
         status("Gestures paused")
     }
@@ -133,6 +139,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard enabled else { return }
         guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
         let frames = bridge.drain()
+        if drawing.process(frames, allowed: !committing) {
+            generation += 1
+            _ = recognizer.cancel()
+            clearPreview()
+            return
+        }
         if !frames.isEmpty { lastFrame = ProcessInfo.processInfo.systemUptime }
         for frame in frames {
             guard let event = recognizer.update(frame.contacts, time: frame.time, optionHeld: frame.optionHeld) else { continue }
@@ -262,8 +274,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func switchWorkspace(_ workspace: String) {
+        guard enabled, !committing, let aerospace = AeroSpace.locate() else { return }
+        committing = true
+        toggleItem.isEnabled = false
+        status("Switching to workspace \(workspace)…")
+        worker.async {
+            let result = Result { _ = try aerospace.run(["workspace", workspace]) }
+            DispatchQueue.main.async {
+                self.committing = false
+                self.toggleItem.isEnabled = true
+                switch result {
+                case .success: self.status("Workspace \(workspace) · ready")
+                case .failure(let error): self.status(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     private func clearPreview() { snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; ghost.hide(); preview.hide() }
     private func cancel() {
+        drawing.cancel()
         generation += 1
         _ = recognizer.cancel()
         clearPreview()
@@ -279,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showHelp() {
         let alert = NSAlert()
         alert.messageText = "Move and resize tiles with gestures"
-        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nThis version supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nTo switch workspaces by drawing, choose Draw to Switch Workspace → Teach a Workspace Symbol. Record three examples, then hold Control–Option, draw with one finger, and release the keys. Escape cancels. You can change the activation keys in the drawing menu.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
