@@ -14,7 +14,7 @@ public enum GestureEvent: Equatable {
     case began(CGPoint), moved(CGPoint), released, cancelled
 }
 
-/// A deliberate three-finger pinch followed by a short hold arms the drag.
+/// A deliberate two-finger pinch followed by a short hold arms the drag.
 /// After release/cancel, all fingers must lift before another gesture can begin.
 public struct GestureRecognizer {
     private enum Phase { case idle, tracking, holding, dragging, blocked }
@@ -44,16 +44,16 @@ public struct GestureRecognizer {
         if phase == .blocked { return nil }
         if phase == .dragging {
             // A partial lift finishes the gesture; additional/replaced fingers cancel.
-            if contacts.count < 3 && Set(contacts.map(\.id)).isSubset(of: ids) {
+            if contacts.count < 2 && Set(contacts.map(\.id)).isSubset(of: ids) {
                 phase = .blocked
                 return .released
             }
-            guard contacts.count == 3, Set(contacts.map(\.id)) == ids else { return cancel() }
+            guard contacts.count == 2, Set(contacts.map(\.id)) == ids else { return cancel() }
             return .moved(Self.centroid(contacts))
         }
-        guard contacts.count == 3 else { phase = .idle; return nil }
+        guard contacts.count == 2 else { phase = .idle; return nil }
         let center = Self.centroid(contacts)
-        let radius = contacts.reduce(0) { $0 + hypot($1.point.x - center.x, $1.point.y - center.y) } / 3
+        let radius = contacts.reduce(0) { $0 + hypot($1.point.x - center.x, $1.point.y - center.y) } / Double(contacts.count)
         if phase == .idle || Set(contacts.map(\.id)) != ids {
             ids = Set(contacts.map(\.id))
             initialRadius = radius

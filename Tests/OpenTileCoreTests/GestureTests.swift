@@ -4,7 +4,7 @@ import CoreGraphics
 
 final class GestureTests: XCTestCase {
     func contacts(_ radius: Double = 0.15, x: Double = 0.5) -> [Contact] {
-        [Contact(id: 1, x: x-radius, y: 0.5), Contact(id: 2, x: x+radius, y: 0.5), Contact(id: 3, x: x, y: 0.5)]
+        [Contact(id: 1, x: x-radius, y: 0.5), Contact(id: 2, x: x+radius, y: 0.5)]
     }
     func arm(_ recognizer: inout GestureRecognizer) {
         XCTAssertNil(recognizer.update(contacts(), time: 0))
@@ -22,6 +22,19 @@ final class GestureTests: XCTestCase {
         XCTAssertNil(r.update(contacts(), time: 0))
         XCTAssertNil(r.update(contacts(x: 0.6), time: 1))
         XCTAssertNil(r.update([], time: 2))
+    }
+    func testOneAndThreeFingerPinchesDoNotArm() {
+        for count in [1, 3] {
+            var r = GestureRecognizer()
+            func frame(_ radius: Double) -> [Contact] {
+                let pair = contacts(radius)
+                return count == 1 ? [pair[0]] : pair + [Contact(id: 3, x: 0.5, y: 0.5)]
+            }
+            XCTAssertNil(r.update(frame(0.15), time: 0))
+            XCTAssertNil(r.update(frame(0.10), time: 0.1))
+            XCTAssertNil(r.update(frame(0.10), time: 0.4))
+            XCTAssertNil(r.update([], time: 0.5))
+        }
     }
     func testBriefPinchDoesNotArm() {
         var r = GestureRecognizer()
@@ -47,7 +60,7 @@ final class GestureTests: XCTestCase {
     }
     func testPartialLiftReleasesOnlyOnce() {
         var r = GestureRecognizer(); arm(&r)
-        XCTAssertEqual(r.update(Array(contacts().prefix(2)), time: 0.4), .released)
+        XCTAssertEqual(r.update(Array(contacts().prefix(1)), time: 0.4), .released)
         XCTAssertNil(r.update([], time: 0.5))
     }
     func testExtraFingerCancels() {
@@ -57,7 +70,7 @@ final class GestureTests: XCTestCase {
     }
     func testReplacedFingerCancels() {
         var r = GestureRecognizer(); arm(&r)
-        XCTAssertEqual(r.update([contacts()[0], contacts()[1], Contact(id: 4, x: 0.5, y: 0.5)], time: 0.4), .cancelled)
+        XCTAssertEqual(r.update([contacts()[0], Contact(id: 4, x: 0.5, y: 0.5)], time: 0.4), .cancelled)
     }
     func testInvalidFrameCancels() {
         var r = GestureRecognizer(); arm(&r)
