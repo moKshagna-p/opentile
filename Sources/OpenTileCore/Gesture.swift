@@ -123,3 +123,27 @@ public struct InsertionPlan {
         commands = result
     }
 }
+
+public enum DropAction: Equatable {
+    case swap, insert(Edge)
+    public static func hitTest(_ point: CGPoint, in rect: CGRect) -> DropAction? {
+        guard let edge = Edge.nearest(to: point, in: rect) else { return nil }
+        return rect.insetBy(dx: rect.width * 0.25, dy: rect.height * 0.25).contains(point) ? .swap : .insert(edge)
+    }
+    public func preview(in rect: CGRect) -> CGRect {
+        switch self {
+        case .swap: return rect
+        case .insert(let edge): return edge.preview(in: rect)
+        }
+    }
+}
+
+/// Exchange the endpoints of a forward DFS path, restoring every intermediate slot.
+public struct SwapPlan {
+    public let commands: [[String]]
+    public init(source: Int, target: Int, distance: Int) {
+        guard source != target, distance > 0 else { commands = []; return }
+        commands = Array(repeating: ["swap", "--window-id", "\(source)", "--wrap-around", "dfs-next"], count: distance)
+            + Array(repeating: ["swap", "--window-id", "\(target)", "--wrap-around", "dfs-prev"], count: distance - 1)
+    }
+}

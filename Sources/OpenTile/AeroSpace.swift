@@ -79,6 +79,54 @@ struct AeroSpace {
         return DesktopSnapshot(source: WindowTile(tile: source, frame: frame), targets: targets)
     }
 
+    func swap(source: Tile, target: Tile) throws {
+        let current = try tiles(["--workspace", source.workspace])
+        let tiled = current.filter { ["h_tiles", "v_tiles", "h_accordion", "v_accordion"].contains($0.layout) }
+        guard source.id != target.id,
+              tiled.contains(where: { $0.id == source.id && $0.pid == source.pid }),
+              tiled.contains(where: { $0.id == target.id && $0.pid == target.pid }) else {
+            throw Failure(message: "The workspace changed. Start the gesture again.")
+        }
+        // list-windows sorts by app/title, not tree order. Discover the forward path
+        // using focus only; no layout changes happen until the target is found.
+        defer { _ = try? run(["focus", "--window-id", "\(source.id)"]) }
+        try run(["focus", "--window-id", "\(source.id)"])
+        var visited: Set<Int> = [source.id]
+        var cursor = source.id
+        var distance = 0
+        while cursor != target.id {
+            guard distance < tiled.count - 1 else { throw Failure(message: "Could not find the swap destination. Start again.") }
+            try run(["focus", "dfs-next", "--boundaries-action", "wrap-around-the-workspace"])
+            guard let next = try tiles(["--focused"]).first,
+                  next.workspace == source.workspace,
+                  tiled.contains(where: { $0.id == next.id && $0.pid == next.pid }),
+                  visited.insert(next.id).inserted else {
+                throw Failure(message: "The workspace changed while selecting the swap destination.")
+            }
+            cursor = next.id
+            distance += 1
+        }
+        let refreshed = try tiles(["--workspace", source.workspace])
+        guard Set(refreshed.map { "\($0.id):\($0.pid):\($0.layout)" }) == Set(current.map { "\($0.id):\($0.pid):\($0.layout)" }) else {
+            throw Failure(message: "The workspace changed. Start the gesture again.")
+        }
+        var completed: [[String]] = []
+        do {
+            for command in SwapPlan(source: source.id, target: target.id, distance: distance).commands {
+                try run(command)
+                completed.append(command)
+            }
+        } catch {
+            var recovered = true
+            for command in completed.reversed() {
+                var inverse = command
+                inverse[inverse.count - 1] = command.last == "dfs-next" ? "dfs-prev" : "dfs-next"
+                do { try run(inverse) } catch { recovered = false; break }
+            }
+            throw Failure(message: "Swap failed. \(recovered ? "Completed steps were undone; check the layout before retrying." : "Recovery was incomplete; check the layout.") \(error.localizedDescription)")
+        }
+    }
+
     func insert(source: Tile, target: Tile, edge: Edge) throws {
         let current = try tiles(["--workspace", source.workspace])
         guard current.contains(where: { $0.id == source.id && ["h_tiles", "v_tiles"].contains($0.layout) }),

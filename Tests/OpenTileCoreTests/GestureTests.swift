@@ -92,4 +92,47 @@ final class GestureTests: XCTestCase {
             }
         }
     }
+    func testCenterSwapAndEdgeInsertionZones() {
+        let rect = CGRect(x: -800, y: -200, width: 800, height: 400)
+        XCTAssertEqual(DropAction.hitTest(CGPoint(x: -400, y: 0), in: rect), .swap)
+        for (point, edge) in [(CGPoint(x: -799, y: 0), Edge.left), (CGPoint(x: -1, y: 0), .right), (CGPoint(x: -400, y: -199), .top), (CGPoint(x: -400, y: 199), .bottom)] {
+            XCTAssertEqual(DropAction.hitTest(point, in: rect), .insert(edge))
+        }
+        XCTAssertEqual(DropAction.hitTest(CGPoint(x: -601, y: 0), in: rect), .insert(.left))
+        XCTAssertEqual(DropAction.hitTest(CGPoint(x: -599, y: 0), in: rect), .swap)
+        XCTAssertNil(DropAction.hitTest(CGPoint(x: 1, y: 0), in: rect))
+        XCTAssertNil(DropAction.hitTest(.zero, in: .zero))
+        XCTAssertEqual(DropAction.swap.preview(in: rect), rect)
+        XCTAssertEqual(DropAction.insert(.left).preview(in: rect), Edge.left.preview(in: rect))
+    }
+
+    func testSwapEveryPairPreservesOtherSlotsAndCanUndo() {
+        for count in 2...12 {
+            for source in 0..<count {
+                for target in 0..<count where source != target {
+                    var slots = Array(0..<count)
+                    let distance = (target - source + count) % count
+                    let commands = SwapPlan(source: source, target: target, distance: distance).commands
+                    func apply(_ command: [String], inverse: Bool = false) {
+                        let index = slots.firstIndex(of: Int(command[2])!)!
+                        let direction = (command.last == "dfs-next" ? 1 : -1) * (inverse ? -1 : 1)
+                        slots.swapAt(index, (index + direction + count) % count)
+                    }
+                    for command in commands { apply(command) }
+                    var expected = Array(0..<count)
+                    expected.swapAt(source, target)
+                    XCTAssertEqual(slots, expected)
+                    for command in commands.reversed() { apply(command, inverse: true) }
+                    XCTAssertEqual(slots, Array(0..<count))
+                    // Every partial success can be undone, including before endpoint restoration.
+                    for prefix in 0...commands.count {
+                        for command in commands.prefix(prefix) { apply(command) }
+                        for command in commands.prefix(prefix).reversed() { apply(command, inverse: true) }
+                        XCTAssertEqual(slots, Array(0..<count))
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(SwapPlan(source: 1, target: 1, distance: 0).commands, [])
+    }
 }

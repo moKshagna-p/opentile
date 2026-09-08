@@ -31,7 +31,12 @@ final class Outline {
             label.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -20)
         ])
     }
-    func show(_ rect: CGRect, text: String) {
+    func show(_ rect: CGRect, text: String, color: NSColor? = nil) {
+        if let color {
+            panel.contentView?.layer?.borderColor = color.cgColor
+            panel.contentView?.layer?.backgroundColor = color.withAlphaComponent(0.12).cgColor
+            label.textColor = color
+        }
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         panel.setFrame(CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height), display: true)
         label.stringValue = text
@@ -59,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var latestPoint = CGPoint.zero
     private var cursor = CGPoint.zero
     private var lastFrame = ProcessInfo.processInfo.systemUptime
-    private var destination: (WindowTile, Edge)?
+    private var destination: (WindowTile, DropAction)?
     private let ghost = Outline(color: .secondaryLabelColor)
     private let preview = Outline(color: .systemTeal)
 
@@ -153,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .success(let snapshot):
                     self.snapshot = snapshot
                     self.move(self.latestPoint)
-                    self.status("Drag the outline to a tile edge · Escape cancels")
+                    self.status("Center to swap · Edge to insert · Escape cancels")
                 case .failure(let error): self.cancel(); self.status(error.localizedDescription)
                 }
             }
@@ -168,16 +173,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          y: snapshot.source.frame.midY - (point.y - origin.y) * screen.height * 2)
         let rect = CGRect(x: cursor.x - snapshot.source.frame.width / 2, y: cursor.y - snapshot.source.frame.height / 2,
                           width: snapshot.source.frame.width, height: snapshot.source.frame.height)
-        ghost.show(rect, text: "Release over a tile edge · Esc to cancel")
-        destination = snapshot.targets.compactMap { target in Edge.nearest(to: cursor, in: target.frame).map { (target, $0) } }.first
-        if let (target, edge) = destination {
-            preview.show(edge.preview(in: target.frame), text: "Insert \(edge.rawValue) · AeroSpace sets final size")
+        ghost.show(rect, text: "Center to swap · Edge to insert · Esc to cancel")
+        destination = snapshot.targets.compactMap { target in DropAction.hitTest(cursor, in: target.frame).map { (target, $0) } }.first
+        if let (target, action) = destination {
+            switch action {
+            case .swap: preview.show(target.frame, text: "Swap windows · Release to exchange places", color: .systemPurple)
+            case .insert(let edge): preview.show(action.preview(in: target.frame), text: "Insert \(edge.rawValue) · AeroSpace sets final size", color: .systemTeal)
+            }
         } else { preview.hide() }
     }
 
     private func release() {
         generation += 1 // invalidates a snapshot still being read
-        guard let snapshot, let (target, edge) = destination, let aerospace = AeroSpace.locate() else {
+        guard let snapshot, let (target, action) = destination, let aerospace = AeroSpace.locate() else {
             clearPreview()
             if !committing { status("No destination selected — layout unchanged") }
             return
@@ -185,14 +193,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clearPreview()
         committing = true
         toggleItem.isEnabled = false
-        status("Inserting window…")
+        status(action == .swap ? "Swapping windows…" : "Inserting window…")
         worker.async {
-            let result = Result { try aerospace.insert(source: snapshot.source.tile, target: target.tile, edge: edge) }
+            let result = Result {
+                switch action {
+                case .swap: try aerospace.swap(source: snapshot.source.tile, target: target.tile)
+                case .insert(let edge): try aerospace.insert(source: snapshot.source.tile, target: target.tile, edge: edge)
+                }
+            }
             DispatchQueue.main.async {
                 self.committing = false
                 self.toggleItem.isEnabled = true
                 switch result {
-                case .success: self.status("Window inserted · ready for another gesture")
+                case .success: self.status(action == .swap ? "Windows swapped · ready for another gesture" : "Window inserted · ready for another gesture")
                 case .failure(let error): self.status(error.localizedDescription); NSSound.beep()
                 }
             }
@@ -216,13 +229,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showHelp() {
         let alert = NSAlert()
         alert.messageText = "Move tiles with a deliberate gesture"
-        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place three fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over another tile to insert beside its highlighted edge. Press Escape before release to cancel.\n\nThis version supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so avoid conflicting three-finger gestures in System Settings.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place three fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nThis version supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so avoid conflicting three-finger gestures in System Settings.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
     @objc private func quit() {
-        guard !committing else { status("Wait for the insertion to finish before quitting"); return }
+        guard !committing else { status("Wait for the layout change to finish before quitting"); return }
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {
