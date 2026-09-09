@@ -16,11 +16,9 @@ import OpenTileCore
         let configuration: SCStreamConfiguration
     }
 
-    func perform(from source: String, to destination: String,
-                 switchWorkspace: () async throws -> Void) async throws -> Bool {
-        var nextStack = stack
-        let direction = nextStack.direction(from: source, to: destination)
-        guard direction != 0 else { return false }
+    func perform(from source: String, to destination: String?,
+                 switchWorkspace: () async throws -> String) async throws -> Bool {
+        if destination == source { return false }
         var surfaces: [Surface] = []
         var watchdog: Timer?
         defer {
@@ -40,10 +38,12 @@ import OpenTileCore
         watchdog = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { _ in
             panels.forEach { $0.orderOut(nil) }
         }
-        try await switchWorkspace()
+        let actualDestination = try await switchWorkspace()
+        var nextStack = stack
+        let direction = nextStack.direction(from: source, to: actualDestination)
         stack = nextStack
         UserDefaults.standard.set(stack.workspaces, forKey: "workspaceStack")
-        guard !surfaces.isEmpty else { return false }
+        guard direction != 0, !surfaces.isEmpty else { return false }
         // Give the window server a few frames to present AeroSpace's new layout.
         try await Task.sleep(nanoseconds: 80_000_000)
         // Refresh after showing the overlays: OpenTile may have had no visible
@@ -65,6 +65,9 @@ import OpenTileCore
         guard panels.allSatisfy(\.isVisible) else { return false }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             CATransaction.begin()
+            // Only the explicit translation below may animate. In particular,
+            // the incoming contents must not fade in over the outgoing image.
+            CATransaction.setDisableActions(true)
             CATransaction.setAnimationDuration(0.42)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.22, 0.75, 0.22, 1))
             CATransaction.setCompletionBlock { continuation.resume() }
@@ -111,6 +114,7 @@ import OpenTileCore
             panel.isReleasedWhenClosed = false
             panel.level = .screenSaver
             panel.hasShadow = false
+            panel.animationBehavior = .none
             panel.ignoresMouseEvents = true
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             let view = NSView(frame: CGRect(origin: .zero, size: visible.size))

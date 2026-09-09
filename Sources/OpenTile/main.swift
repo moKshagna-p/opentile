@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSMenuItem!
     private var enabled = false
     private var committing = false
+    private var workspaceRequests: [WorkspaceRequest] = []
     private var generation = 0
     private var snapshot: DesktopSnapshot?
     private var resizing = false
@@ -145,6 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
+        if !committing, !workspaceRequests.isEmpty {
+            switchWorkspace(workspaceRequests.removeFirst())
+        }
         guard enabled else { return }
         guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
         let frames = bridge.drain()
@@ -308,11 +312,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        workspaceRequests.append(contentsOf: urls.compactMap { WorkspaceRequest(url: $0) })
+    }
+
     private func switchWorkspace(_ workspace: String) {
-        guard enabled, !committing, let aerospace = AeroSpace.locate() else { return }
+        guard enabled else { return }
+        workspaceRequests.append(.workspace(workspace))
+    }
+
+    private func switchWorkspace(_ request: WorkspaceRequest) {
+        guard !committing, let aerospace = AeroSpace.locate() else { return }
+        cancel()
+        let destination: String?
+        if case .workspace(let name) = request { destination = name } else { destination = nil }
         committing = true
         toggleItem.isEnabled = false
-        status("Switching to workspace \(workspace)…")
+        status("Switching workspace…")
         Task { @MainActor in
             defer {
                 self.committing = false
@@ -322,10 +338,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let source = try await self.workspaceCommand(aerospace, ["list-workspaces", "--focused"])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !source.isEmpty else { throw AeroSpace.Failure(message: "Cannot read the current workspace") }
-                let animated = try await self.workspaceTransition.perform(from: source, to: workspace) {
-                    _ = try await self.workspaceCommand(aerospace, ["workspace", workspace])
+                let animated = try await self.workspaceTransition.perform(from: source, to: destination) {
+                    _ = try await self.workspaceCommand(aerospace, request.arguments)
+                    let actual = try await self.workspaceCommand(aerospace, ["list-workspaces", "--focused"])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !actual.isEmpty else { throw AeroSpace.Failure(message: "Cannot read the destination workspace") }
+                    return actual
                 }
-                self.status("Workspace \(workspace) · \(animated ? "ready" : "ready (no animation)")")
+                self.status("Workspace · \(animated ? "ready" : "ready (no animation)")")
             } catch {
                 self.status(error.localizedDescription)
             }

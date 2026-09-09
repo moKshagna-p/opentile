@@ -26,6 +26,9 @@ final class WorkspaceDrawing: NSObject {
     private var mappings: [AppMapping] = []
     private var appGate = AppDrawingGate()
     private var storageKey: String { apps ? "appSymbols.v1" : "workspaceSymbols.v1" }
+    private var previewKey: String { apps ? "showAppDrawingPreview" : "showWorkspaceDrawingPreview" }
+    private var previewEnabled: Bool { UserDefaults.standard.object(forKey: previewKey) as? Bool ?? true }
+    private var shouldShowPreview: Bool { training != nil || previewEnabled }
     private var symbols: [WorkspaceSymbol] = []
     private var choosingWorkspace = false
     private var training: String?
@@ -52,6 +55,7 @@ final class WorkspaceDrawing: NSObject {
         super.init()
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([WorkspaceSymbol].self, from: data) { symbols = saved }
+        panel.animationBehavior = .none
         panel.isOpaque = false; panel.backgroundColor = .clear
         panel.level = .floating; panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -73,6 +77,10 @@ final class WorkspaceDrawing: NSObject {
         info.isEnabled = false
         let train = menu.addItem(withTitle: apps ? "Teach an App Symbol…" : "Teach a Workspace Symbol…", action: #selector(teach), keyEquivalent: ""); train.target = self
         let cancel = menu.addItem(withTitle: "Cancel Training", action: #selector(cancelTraining), keyEquivalent: ""); cancel.target = self; cancel.isEnabled = training != nil
+        let preview = menu.addItem(withTitle: "Show Drawing Preview", action: #selector(togglePreview), keyEquivalent: "")
+        preview.target = self; preview.state = previewEnabled ? .on : .off
+        let previewInfo = menu.addItem(withTitle: "Preview always appears while teaching", action: nil, keyEquivalent: "")
+        previewInfo.isEnabled = false
         if !apps {
         let shortcut = menu.addItem(withTitle: "Use Control–Shift instead", action: #selector(changeChord), keyEquivalent: "")
         shortcut.target = self; shortcut.state = chord.contains(.shift) ? .on : .off
@@ -88,6 +96,11 @@ final class WorkspaceDrawing: NSObject {
             let remove = menu.addItem(withTitle: "Forget symbol for \(name)", action: #selector(forget(_:)), keyEquivalent: "")
             remove.target = self; remove.representedObject = name
         }
+    }
+    @objc private func togglePreview() {
+        UserDefaults.standard.set(!previewEnabled, forKey: previewKey)
+        if !shouldShowPreview { panel.orderOut(nil) }
+        rebuildMenu()
     }
     @objc private func changeChord() {
         cancel(); held = false
@@ -147,6 +160,7 @@ final class WorkspaceDrawing: NSObject {
         apps ? symbols.filter { symbol in mappings.contains { $0.key == symbol.workspace } } : symbols
     }
     private func show(_ message: String) {
+        guard shouldShowPreview else { panel.orderOut(nil); return }
         label.stringValue = message
         if !panel.isVisible {
             let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main
@@ -194,8 +208,8 @@ final class WorkspaceDrawing: NSObject {
                     lastInput = now; fingerDown = !frame.contacts.isEmpty
                 }
         if capture.cancelled { cancel(); onStatus?("Drawing cancelled — use one finger"); return true }
-        canvas.strokes = capture.strokes
-        if training == nil && now - previewTime > 0.12 {
+        if shouldShowPreview { canvas.strokes = capture.strokes }
+        if previewEnabled && training == nil && now - previewTime > 0.12 {
             previewTime = now
             let match = WorkspaceMatcher.match(capture.strokes, symbols: availableSymbols)
             show(match.map { key in apps ? "\(mappings.first { $0.key == key }?.application ?? key)\nRelease Option to open · Escape cancels" : "Workspace \(key)\nRelease keys to switch · Escape cancels" } ?? "Keep drawing · no confident match\nRelease keys to teach · Escape cancels")
