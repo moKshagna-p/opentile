@@ -23,6 +23,15 @@ public struct ResizePlan {
                                 dy: horizontal ? 0 : -Double(amount) / 2)
     }
 
+    /// Keep the visual request inside the display without changing the resize command.
+    public func preview(constrainedTo bounds: CGRect) -> CGRect {
+        let width = min(preview.width, bounds.width)
+        let height = min(preview.height, bounds.height)
+        return CGRect(x: max(bounds.minX, min(preview.minX, bounds.maxX - width)),
+                      y: max(bounds.minY, min(preview.minY, bounds.maxY - height)),
+                      width: width, height: height)
+    }
+
     public func command(windowID: Int) -> [String]? {
         guard amount != 0 else { return nil }
         return ["resize", "--window-id", "\(windowID)", "smart", amount > 0 ? "+\(amount)" : "\(amount)"]

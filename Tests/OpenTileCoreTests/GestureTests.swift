@@ -155,6 +155,24 @@ final class GestureTests: XCTestCase {
         XCTAssertNil(ResizePlan(frame: frame, layout: "floating", change: 0.4).command(windowID: 42))
     }
 
+    func testResizePreviewStaysInsideUsableDisplayWithoutChangingCommand() {
+        let bounds = CGRect(x: -1440, y: -200, width: 1440, height: 850)
+        for frame in [CGRect(x: -1440, y: -200, width: 800, height: 600),
+                      CGRect(x: -800, y: 50, width: 800, height: 600), bounds] {
+            for layout in ["h_tiles", "v_tiles"] {
+                for change in [-0.4, 0.4] {
+                    let plan = ResizePlan(frame: frame, layout: layout, change: change)
+                    let command = plan.command(windowID: 42)
+                    let rect = plan.preview(constrainedTo: bounds)
+                    XCTAssertTrue(bounds.contains(rect))
+                    XCTAssertEqual(rect.width, min(plan.preview.width, bounds.width))
+                    XCTAssertEqual(rect.height, min(plan.preview.height, bounds.height))
+                    XCTAssertEqual(plan.command(windowID: 42), command)
+                }
+            }
+        }
+    }
+
     func testEdgesAndPreviewAtNegativeScreenCoordinates() {
         let rect = CGRect(x: -1000, y: -200, width: 800, height: 600)
         XCTAssertEqual(Edge.nearest(to: CGPoint(x: -999, y: 0), in: rect), .left)

@@ -219,7 +219,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let plan = ResizePlan(frame: snapshot.source.frame, layout: snapshot.source.tile.layout, change: change)
         let dimension = plan.horizontal ? "width" : "height"
         let amount = plan.amount > 0 ? "+\(plan.amount)" : "\(plan.amount)"
-        preview.show(plan.preview, text: "Resize \(dimension) \(amount) · Lift to apply · Esc cancels", color: .systemOrange)
+        // AX window rectangles use a top-left origin; NSScreen uses bottom-left.
+        let top = NSScreen.screens.first?.frame.maxY ?? 0
+        let displays = NSScreen.screens.map { screen in
+            let visible = screen.visibleFrame
+            return CGRect(x: visible.minX, y: top - visible.maxY,
+                          width: visible.width, height: visible.height)
+        }
+        let bounds = displays.max { lhs, rhs in
+            let left = lhs.intersection(snapshot.source.frame)
+            let right = rhs.intersection(snapshot.source.frame)
+            return left.width * left.height < right.width * right.height
+        }
+        let rect = bounds.map { plan.preview(constrainedTo: $0) } ?? plan.preview
+        preview.show(rect, text: "Resize \(dimension) \(amount) · Lift to apply · Esc cancels", color: .systemOrange)
     }
 
     private func releaseResize() {
