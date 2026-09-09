@@ -48,6 +48,8 @@ final class Outline {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let bridge = TouchBridge()
     private let drawing = WorkspaceDrawing()
+    private let appDrawing = WorkspaceDrawing(apps: true)
+    private var appDrawingOwnedFrames = false
     @MainActor private lazy var workspaceTransition = WorkspaceTransition()
     private var recognizer = GestureRecognizer()
     private let worker = DispatchQueue(label: "OpenTile.AeroSpace")
@@ -83,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         toggleItem = menu.addItem(withTitle: "Enable Gestures", action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
+        appDrawing.install(in: menu)
+        appDrawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }
+        appDrawing.onStatus = { [weak self] message in self?.status(message) }
         drawing.install(in: menu)
         drawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }
         drawing.onStatus = { [weak self] message in self?.status(message) }
@@ -134,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enabled = false
         bridge.stop()
         drawing.stop()
+        appDrawing.stop()
         toggleItem.title = "Enable Gestures"
         status("Gestures paused")
     }
@@ -143,10 +149,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
         let frames = bridge.drain()
         if drawing.process(frames, allowed: !committing) {
+            appDrawing.cancel()
             generation += 1
             _ = recognizer.cancel()
             clearPreview()
             return
+        }
+        if appDrawing.process(frames, allowed: !committing) {
+            appDrawingOwnedFrames = true
+            generation += 1
+            _ = recognizer.cancel()
+            clearPreview()
+            return
+        }
+        if appDrawingOwnedFrames {
+            recognizer = GestureRecognizer()
+            appDrawingOwnedFrames = false
         }
         if !frames.isEmpty { lastFrame = ProcessInfo.processInfo.systemUptime }
         for frame in frames {
@@ -327,6 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func clearPreview() { snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; ghost.hide(); preview.hide() }
     private func cancel() {
         drawing.cancel()
+        appDrawing.cancel()
         generation += 1
         _ = recognizer.cancel()
         clearPreview()
@@ -345,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showHelp() {
         let alert = NSAlert()
         alert.messageText = "Move and resize tiles with gestures"
-        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Allow Screen Recording when prompted to enable the animation; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nTo open apps, hold Option and draw the shortcut letter with one finger, then release Option. Only apps from your active Karabiner Caps + O mappings are available. On the first drawing, select its shortcut and draw two more examples to teach it. You can also use Draw to Open App → Teach an App Symbol. Two fingers still resize.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Allow Screen Recording when prompted to enable the animation; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()

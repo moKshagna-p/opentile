@@ -22,6 +22,10 @@ final class WorkspaceDrawing: NSObject {
     var onSwitch: ((String) -> Void)?
     var onStatus: ((String) -> Void)?
     var canTrain: (() -> Bool)?
+    private let apps: Bool
+    private var mappings: [AppMapping] = []
+    private var appGate = AppDrawingGate()
+    private var storageKey: String { apps ? "appSymbols.v1" : "workspaceSymbols.v1" }
     private var symbols: [WorkspaceSymbol] = []
     private var choosingWorkspace = false
     private var training: String?
@@ -38,14 +42,15 @@ final class WorkspaceDrawing: NSObject {
     private let label = NSTextField(labelWithString: "")
     private let menu = NSMenu()
     private var chord: NSEvent.ModifierFlags {
-        UserDefaults.standard.bool(forKey: "drawingControlShift") ? [.control, .shift] : [.control, .option]
+        apps ? [.option] : UserDefaults.standard.bool(forKey: "drawingControlShift") ? [.control, .shift] : [.control, .option]
     }
-    private var chordName: String { chord.contains(.shift) ? "Control–Shift" : "Control–Option" }
+    private var chordName: String { apps ? "Option" : chord.contains(.shift) ? "Control–Shift" : "Control–Option" }
 
-    override init() {
+    init(apps: Bool = false) {
+        self.apps = apps
         panel = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 480, height: 340), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         super.init()
-        if let data = UserDefaults.standard.data(forKey: "workspaceSymbols.v1"),
+        if let data = UserDefaults.standard.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([WorkspaceSymbol].self, from: data) { symbols = saved }
         panel.isOpaque = false; panel.backgroundColor = .clear
         panel.level = .floating; panel.ignoresMouseEvents = true
@@ -55,20 +60,29 @@ final class WorkspaceDrawing: NSObject {
         label.alignment = .center; label.maximumNumberOfLines = 2
         label.font = .systemFont(ofSize: 14, weight: .medium)
         canvas.addSubview(label)
+        if apps { reloadMappings() }
         rebuildMenu()
     }
     func install(in parent: NSMenu) {
-        let item = parent.addItem(withTitle: "Draw to Switch Workspace", action: nil, keyEquivalent: "")
+        let item = parent.addItem(withTitle: apps ? "Draw to Open App" : "Draw to Switch Workspace", action: nil, keyEquivalent: "")
         item.submenu = menu
     }
     private func rebuildMenu() {
         menu.removeAllItems()
         let info = menu.addItem(withTitle: "Hold \(chordName), draw, then release", action: nil, keyEquivalent: "")
         info.isEnabled = false
-        let train = menu.addItem(withTitle: "Teach a Workspace Symbol…", action: #selector(teach), keyEquivalent: ""); train.target = self
+        let train = menu.addItem(withTitle: apps ? "Teach an App Symbol…" : "Teach a Workspace Symbol…", action: #selector(teach), keyEquivalent: ""); train.target = self
         let cancel = menu.addItem(withTitle: "Cancel Training", action: #selector(cancelTraining), keyEquivalent: ""); cancel.target = self; cancel.isEnabled = training != nil
+        if !apps {
         let shortcut = menu.addItem(withTitle: "Use Control–Shift instead", action: #selector(changeChord), keyEquivalent: "")
         shortcut.target = self; shortcut.state = chord.contains(.shift) ? .on : .off
+        }
+        if apps {
+            for mapping in mappings {
+                let entry = menu.addItem(withTitle: "\(mapping.key.uppercased()) → \(mapping.application)", action: nil, keyEquivalent: "")
+                entry.isEnabled = false
+            }
+        }
         menu.addItem(.separator())
         for name in Set(symbols.map(\.workspace)).sorted() {
             let remove = menu.addItem(withTitle: "Forget symbol for \(name)", action: #selector(forget(_:)), keyEquivalent: "")
@@ -97,13 +111,22 @@ final class WorkspaceDrawing: NSObject {
         if firstDrawing != nil {
             alert.informativeText = "This drawing has no confident match. Enter the exact AeroSpace workspace name it should open (for example 1 or A). This drawing counts as your first example; draw it two more times to save it. Existing examples for that workspace are replaced only after all three are collected."
         }
+        if apps { reloadMappings() }
+        if apps && mappings.isEmpty { onStatus?("No Caps + O app mappings found in Karabiner"); return }
+        let picker = NSPopUpButton(frame: CGRect(x: 0, y: 0, width: 280, height: 26))
+        if apps {
+            alert.messageText = "Teach an app symbol"
+            alert.informativeText = "Choose one of your Caps + O shortcuts. Hold Option, draw its letter with one finger, then release Option. Save three examples; you can lift between strokes. Two fingers resize instead."
+            if firstDrawing != nil { alert.informativeText += " This drawing counts as the first example." }
+            picker.addItems(withTitles: mappings.map { "\($0.key.uppercased()) → \($0.application)" })
+        }
         let input = NSTextField(frame: CGRect(x: 0, y: 0, width: 280, height: 24))
         input.placeholderString = "Workspace name"
-        alert.accessoryView = input; alert.addButton(withTitle: firstDrawing == nil ? "Start Training" : "Learn Symbol"); alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = apps ? picker : input; alert.addButton(withTitle: firstDrawing == nil ? "Start Training" : "Learn Symbol"); alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
-        alert.window.initialFirstResponder = input
+        alert.window.initialFirstResponder = apps ? picker : input
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = apps ? mappings[picker.indexOfSelectedItem].key : input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !name.contains("\n"), !name.contains("\r") else { return }
         guard canTrain?() == true else { return }
         cancel(); training = name
@@ -113,7 +136,15 @@ final class WorkspaceDrawing: NSObject {
     }
     @objc private func cancelTraining() { training = nil; samples = []; cancel(); rebuildMenu() }
     private func save() {
-        if let data = try? JSONEncoder().encode(symbols) { UserDefaults.standard.set(data, forKey: "workspaceSymbols.v1") }
+        if let data = try? JSONEncoder().encode(symbols) { UserDefaults.standard.set(data, forKey: storageKey) }
+    }
+    private func reloadMappings() {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/karabiner/karabiner.json")
+        mappings = (try? Data(contentsOf: url)).map(AppMapping.read) ?? []
+        rebuildMenu()
+    }
+    private var availableSymbols: [WorkspaceSymbol] {
+        apps ? symbols.filter { symbol in mappings.contains { $0.key == symbol.workspace } } : symbols
     }
     private func show(_ message: String) {
         label.stringValue = message
@@ -124,18 +155,23 @@ final class WorkspaceDrawing: NSObject {
         }
     }
     func cancel() { blocked = true; panel.orderOut(nil); capture = DrawingCapture() }
-    func stop() { cancelTraining(); held = false }
+    func stop() { cancelTraining(); held = false; appGate = AppDrawingGate() }
 
     /// Returns true while drawing owns this frame, including the release frame.
     func process(_ frames: [TouchBridge.Frame], allowed: Bool) -> Bool {
         let flags = NSEvent.modifierFlags.intersection([.control, .option, .shift, .command])
         let down = flags == chord
+        if apps {
+            let owns = appGate.ownsDrawing(optionOnly: down, contactCounts: frames.map { $0.contacts.count })
+            if down && !owns { cancel(); held = false; return false }
+        }
         if choosingWorkspace { held = down; blocked = true; return true }
         let now = ProcessInfo.processInfo.systemUptime
         if !allowed { cancel(); held = down; return down }
         if down && !held {
+            if apps { reloadMappings() }
             held = true; blocked = false; started = now; lastInput = now; fingerDown = false; capture = DrawingCapture(); canvas.strokes = []
-            show(training.map { "Teach \($0) · sample \(samples.count+1) of 3\nDraw with one finger · Escape cancels" } ?? "Draw your workspace symbol\nRelease keys to switch · Escape cancels")
+            show(training.map { "Teach \($0) · sample \(samples.count+1) of 3\nDraw with one finger · Escape cancels" } ?? (apps ? "Draw your app shortcut letter\nRelease Option to open · Two fingers resize" : "Draw your workspace symbol\nRelease keys to switch · Escape cancels"))
             return true // discard frames queued before activation
         }
         if !down && held {
@@ -161,15 +197,19 @@ final class WorkspaceDrawing: NSObject {
         canvas.strokes = capture.strokes
         if training == nil && now - previewTime > 0.12 {
             previewTime = now
-            let match = WorkspaceMatcher.match(capture.strokes, symbols: symbols)
-            show(match.map { "Workspace \($0)\nRelease keys to switch · Escape cancels" } ?? "Keep drawing · no confident match\nRelease keys to teach · Escape cancels")
+            let match = WorkspaceMatcher.match(capture.strokes, symbols: availableSymbols)
+            show(match.map { key in apps ? "\(mappings.first { $0.key == key }?.application ?? key)\nRelease Option to open · Escape cancels" : "Workspace \(key)\nRelease keys to switch · Escape cancels" } ?? "Keep drawing · no confident match\nRelease keys to teach · Escape cancels")
         }
         return true
     }
     private func finish() {
         panel.orderOut(nil)
         guard WorkspaceMatcher.isValid(capture.strokes) else { onStatus?("Drawing too small — try again"); return }
+        if apps { reloadMappings() }
         if let training {
+            if apps && !mappings.contains(where: { $0.key == training }) {
+                cancelTraining(); onStatus?("App shortcut was removed from Karabiner"); return
+            }
             // Require repeatable training samples before persisting them.
             if !samples.isEmpty && WorkspaceMatcher.match(capture.strokes, symbols: samples) == nil {
                 show("That sample looks different · try again\nTeach \(training) · sample \(samples.count+1) of 3"); return
@@ -180,8 +220,18 @@ final class WorkspaceDrawing: NSObject {
                 self.training = nil; samples = []; save(); rebuildMenu()
                 onStatus?("Symbol saved for \(training) — hold \(chordName) and draw")
             } else { show("Sample saved · teach \(training) again\nHold \(chordName) · sample \(samples.count+1) of 3") }
-        } else if let workspace = WorkspaceMatcher.match(capture.strokes, symbols: symbols) {
-            onSwitch?(workspace)
+        } else if let workspace = WorkspaceMatcher.match(capture.strokes, symbols: availableSymbols) {
+            if apps {
+                guard let mapping = mappings.first(where: { $0.key == workspace }) else { return }
+                // Pass arguments directly; never execute the imported shell command.
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                process.arguments = ["-a", mapping.application]
+                process.terminationHandler = { [weak self] task in
+                    DispatchQueue.main.async { self?.onStatus?(task.terminationStatus == 0 ? "Opened \(mapping.application)" : "Could not open \(mapping.application)") }
+                }
+                do { try process.run() } catch { onStatus?("Could not open \(mapping.application): \(error.localizedDescription)") }
+            } else { onSwitch?(workspace) }
         } else { beginTraining(firstDrawing: capture.strokes) }
     }
 }
