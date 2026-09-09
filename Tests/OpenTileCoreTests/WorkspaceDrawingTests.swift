@@ -25,6 +25,37 @@ final class WorkspaceDrawingTests: XCTestCase {
         XCTAssertNil(WorkspaceMatcher.match(horizontal, symbols: [.init(workspace: "1", strokes: vertical)]))
         XCTAssertFalse(WorkspaceMatcher.isValid([line(.init(x: 0.1, y: 0.1), .init(x: 0.11, y: 0.11))]))
     }
+    func testHandwritingProportionsAndStrokeDirection() {
+        let original = [line(.init(x: 0.1, y: 0.1), .init(x: 0.1, y: 0.8)),
+                        line(.init(x: 0.1, y: 0.1), .init(x: 0.6, y: 0.1))]
+        // The same L drawn wider, in reverse stroke order and direction.
+        let wider = original.reversed().map { stroke in
+            stroke.reversed().map { DrawingPoint(x: $0.x * 1.5, y: $0.y * 0.75) }
+        }
+        let vertical = [line(.init(x: 0.2, y: 0.1), .init(x: 0.2, y: 0.8))]
+        XCTAssertEqual(WorkspaceMatcher.match(wider, symbols: [
+            .init(workspace: "L", strokes: original),
+            .init(workspace: "1", strokes: vertical)
+        ]), "L")
+    }
+    func testClearWinnerAmongSimilarSymbols() {
+        let straight = [line(.init(x: 0.2, y: 0.1), .init(x: 0.2, y: 0.8))]
+        let tilted = [line(.init(x: 0.2, y: 0.1), .init(x: 0.23, y: 0.8))]
+        let halfway = [line(.init(x: 0.2, y: 0.1), .init(x: 0.215, y: 0.8))]
+        let symbols = [WorkspaceSymbol(workspace: "straight", strokes: straight),
+                       WorkspaceSymbol(workspace: "tilted", strokes: tilted)]
+        XCTAssertEqual(WorkspaceMatcher.match(straight, symbols: symbols), "straight")
+        XCTAssertNil(WorkspaceMatcher.match(halfway, symbols: symbols))
+    }
+    func testSmallWobbleDoesNotExpandIntoDifferentSymbol() {
+        let vertical = [line(.init(x: 0.2, y: 0.1), .init(x: 0.2, y: 0.8))]
+        let wobbly = vertical.map { $0.map {
+            DrawingPoint(x: $0.x + 0.015 * sin($0.y * 20), y: $0.y)
+        } }
+        XCTAssertEqual(WorkspaceMatcher.match(wobbly, symbols: [
+            .init(workspace: "1", strokes: vertical)
+        ]), "1")
+    }
     func testSeparateStrokesAndInvalidFrames() {
         var capture = DrawingCapture()
         capture.update([Contact(id: 1, x: 0.2, y: 0.3)], time: 1)

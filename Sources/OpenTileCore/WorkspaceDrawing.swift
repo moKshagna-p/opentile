@@ -72,7 +72,15 @@ public enum WorkspaceMatcher {
             result.append(.init(x: (a.x + (b.x-a.x)*t-minX)/scale,
                                 y: (a.y + (b.y-a.y)*t-minY)/scale))
         }
-        return result
+        // Center the sampled ink rather than anchoring to an extreme point.
+        // Normalize handwriting proportions, but limit expansion of narrow marks
+        // so a slightly wobbly "1" does not become a full-width shape.
+        let centerX = result.reduce(0) { $0 + $1.x } / Double(result.count)
+        let centerY = result.reduce(0) { $0 + $1.y } / Double(result.count)
+        let width = max((maxX - minX) / scale, 0.5)
+        let height = max((maxY - minY) / scale, 0.5)
+        return result.map { .init(x: ($0.x - centerX) / width,
+                                  y: ($0.y - centerY) / height) }
     }
     public static func isValid(_ strokes: [[DrawingPoint]]) -> Bool { normalized(strokes) != nil }
     public static func match(_ strokes: [[DrawingPoint]], symbols: [WorkspaceSymbol]) -> String? {
@@ -87,8 +95,10 @@ public enum WorkspaceMatcher {
             scores[symbol.workspace] = min(scores[symbol.workspace] ?? .infinity, score)
         }
         let ranked = scores.sorted { $0.value < $1.value }
+        // Require a 25% lead over other workspaces; identical/near-tied
+        // drawings remain ambiguous even when both scores are very small.
         guard let best = ranked.first, best.value < 0.09,
-              ranked.count == 1 || ranked[1].value - best.value > 0.035 else { return nil }
+              ranked.count == 1 || best.value < ranked[1].value * 0.75 else { return nil }
         return best.key
     }
 }
