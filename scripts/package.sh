@@ -1,6 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# A stable signing identity lets macOS recognize updates and retain permissions.
+# CI can explicitly request ad-hoc signing with OPENTILE_SIGNING_IDENTITY=-.
+signing_identity="${OPENTILE_SIGNING_IDENTITY:-}"
+if [[ -z "$signing_identity" ]]; then
+    identities="$(security find-identity -v -p codesigning | sed -nE 's/^[[:space:]]*[0-9]+\) ([A-F0-9]{40}) ".*/\1/p')"
+    count="$(printf '%s\n' "$identities" | awk 'NF { n++ } END { print n+0 }')"
+    if [[ "$count" != 1 ]]; then
+        echo "Set OPENTILE_SIGNING_IDENTITY to a stable code-signing identity (found $count)." >&2
+        exit 1
+    fi
+    signing_identity="$identities"
+fi
 swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/package/OpenTile.app"
@@ -26,7 +38,7 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 plutil -lint "$app_dir/Contents/Info.plist"
-codesign --force --sign - "$app_dir"
+codesign --force --sign "$signing_identity" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 ditto -c -k --sequesterRsrc --keepParent "$app_dir" "$PWD/.build/package/OpenTile-macOS-arm64.zip"
 (cd "$PWD/.build/package" && shasum -a 256 OpenTile-macOS-arm64.zip > SHA256.txt)
