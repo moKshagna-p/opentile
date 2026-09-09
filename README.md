@@ -1,45 +1,48 @@
 # OpenTile
 
-Gesture-driven window tiling for macOS. Pinch a window, fling it where you
-want, release — it snaps back into the tiling tree. A gesture bridge that sits
-on top of [AeroSpace](https://github.com/nikitabobko/AeroSpace) and makes
-window movement feel physical.
+Trackpad gestures for [AeroSpace](https://github.com/nikitabobko/AeroSpace) on macOS. Move and resize tiled windows, or draw a symbol to switch workspaces.
 
-```
-Status: Phase 2 — Multitouch Bridge (raw touch capture verified)
-Spec:   plan.html — full engineering spec & roadmap
-```
+OpenTile is a menu bar companion to AeroSpace. AeroSpace handles the tiling; OpenTile adds gesture controls and visual previews.
 
-## How it works
+## Features
 
-1. **Gesture input** — raw per-finger trackpad data via Apple's private
-   `MultitouchSupport.framework` (~90–125 Hz, global, no Accessibility needed).
-2. **Gesture engine** *(phase 3)* — pinch detection, centroid tracking,
-   state machine: idle → grab → drag → release.
-3. **Window bridge** *(phase 4)* — float/drag/re-tile via the Accessibility
-   API + AeroSpace CLI.
+- **Move tiles:** pinch and hold, then move two fingers to preview a swap or insertion.
+- **Resize tiles:** hold Option and pinch inward to grow or outward to shrink. The orange preview stays within the display’s usable area.
+- **Draw to switch:** teach OpenTile a number or symbol for each workspace using three examples, then draw it to switch.
+- **Workspace animations:** drawing switches use a vertical slide transition, with support for Reduce Motion.
 
-The MTTouch struct layout was verified empirically on Apple Silicon by dumping
-raw contact frames (96-byte stride — differs from pre-arm64 references).
+## Requirements
 
-## Build
+- macOS 14 or later, an Apple Silicon Mac, and a built-in trackpad.
+- AeroSpace installed and running, with its CLI available.
+- Accessibility permission for OpenTile. Screen Recording permission enables workspace animations.
+- Swift 6 toolchain to build from source.
+
+## Build and run
+
+From the repository root:
 
 ```sh
-./build.sh          # direct swiftc (see note inside; SPM blocked by local CLT bug)
-.build/bin/OpenTile # touch the trackpad — watch the telemetry
+bash scripts/package.sh
+cp -R .build/package/OpenTile.app /Applications/
+open /Applications/OpenTile.app
 ```
 
-Requires macOS 14+, built-in trackpad. No third-party dependencies.
+Allow the requested permissions, then select **Enable Gestures** from the OpenTile menu bar icon.
 
-## Roadmap
+## Gestures
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Scaffold & plan | ✅ |
-| 2 | Multitouch bridge | 🔨 in progress |
-| 3 | Gesture engine | planned |
-| 4 | Window bridge (AX + AeroSpace) | planned |
-| 5 | Integration & menu bar UI | planned |
-| 6 | Polish & ship | planned |
+Start with a focused tiled window.
 
-Ponytail discipline: less code, more signal.
+| Action | Gesture |
+| --- | --- |
+| Move or swap | Pinch inward with two fingers, hold briefly, then move them together. Release over another tile’s center to swap, or near its edge to insert. |
+| Resize | Hold Option before touching the trackpad. Pinch inward to grow or spread outward to shrink, then lift to apply. |
+| Switch workspace | Hold Control–Option, draw a saved symbol with one finger, then release the keys. |
+| Cancel | Press Escape before applying the gesture. |
+
+For a new workspace symbol, follow the training prompt or choose **Draw to Switch Workspace → Teach a Workspace Symbol**. The same menu lets you change the drawing shortcut to Control–Shift.
+
+## Status
+
+Experimental. Trackpad input uses Apple’s private `MultitouchSupport` framework and has been verified on Apple Silicon. Native trackpad gestures may also respond. Tile movement works within the current workspace, and AeroSpace determines the final window sizes and positions.
