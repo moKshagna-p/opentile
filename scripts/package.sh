@@ -13,8 +13,8 @@ if [[ -z "$signing_identity" ]]; then
     fi
     signing_identity="$identities"
 fi
-version="${OPENTILE_VERSION:-0.2.0}"
-build_number="${OPENTILE_BUILD_NUMBER:-2}"
+version="${OPENTILE_VERSION:-0.2.1}"
+build_number="${OPENTILE_BUILD_NUMBER:-3}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
     echo "Use a semantic OPENTILE_VERSION and positive integer OPENTILE_BUILD_NUMBER." >&2
     exit 1
@@ -22,7 +22,15 @@ fi
 swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/package/OpenTile.app"
-mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Frameworks"
+mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Frameworks" "$app_dir/Contents/Resources"
+iconset="$PWD/.build/package/AppIcon.iconset"
+mkdir -p "$iconset"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" Resources/AppIcon.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    pixels=$((size * 2))
+    sips -z "$pixels" "$pixels" Resources/AppIcon.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/AppIcon.icns"
 framework="$app_dir/Contents/Frameworks/Sparkle.framework"
 ditto ".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$framework"
 cp "$bin_dir/OpenTile" "$app_dir/Contents/MacOS/OpenTile"
@@ -33,6 +41,7 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>OpenTile</string>
 <key>CFBundleIdentifier</key><string>com.mokshagna.opentile</string>
 <key>CFBundleName</key><string>OpenTile</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
