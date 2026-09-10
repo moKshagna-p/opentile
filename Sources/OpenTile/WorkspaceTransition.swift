@@ -68,8 +68,8 @@ import OpenTileCore
             // Only the explicit translation below may animate. In particular,
             // the incoming contents must not fade in over the outgoing image.
             CATransaction.setDisableActions(true)
-            CATransaction.setAnimationDuration(0.42)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.22, 0.75, 0.22, 1))
+            CATransaction.setAnimationDuration(0.24)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.16, 0.85, 0.22, 1))
             CATransaction.setCompletionBlock { continuation.resume() }
             for (surface, image) in zip(surfaces, incoming) {
                 let outgoing = surface.layer.sublayers!.first!
