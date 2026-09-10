@@ -5,6 +5,7 @@ on:
       - 'Sources/**'
       - 'Tests/**'
       - 'Package.swift'
+      - 'Package.resolved'
       - 'scripts/**'
       - '.github/workflows/build.yml'
   pull_request:

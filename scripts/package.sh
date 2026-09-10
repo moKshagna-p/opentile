@@ -13,10 +13,18 @@ if [[ -z "$signing_identity" ]]; then
     fi
     signing_identity="$identities"
 fi
+version="${OPENTILE_VERSION:-0.2.0}"
+build_number="${OPENTILE_BUILD_NUMBER:-2}"
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Use a semantic OPENTILE_VERSION and positive integer OPENTILE_BUILD_NUMBER." >&2
+    exit 1
+fi
 swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/package/OpenTile.app"
-mkdir -p "$app_dir/Contents/MacOS"
+mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Frameworks"
+framework="$app_dir/Contents/Frameworks/Sparkle.framework"
+ditto ".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$framework"
 cp "$bin_dir/OpenTile" "$app_dir/Contents/MacOS/OpenTile"
 cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -35,8 +43,20 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 </dict></array>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
+<key>SUFeedURL</key><string>https://github.com/moKshagna-p/opentile/releases/latest/download/appcast.xml</string>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUAutomaticallyUpdate</key><false/>
+<key>SUEnableSystemProfiling</key><false/>
 </dict></plist>
 PLIST
+plutil -replace CFBundleShortVersionString -string "$version" "$app_dir/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$build_number" "$app_dir/Contents/Info.plist"
+plutil -insert SUPublicEDKey -string "$(cat scripts/sparkle-public-key.txt)" "$app_dir/Contents/Info.plist"
+# Sign nested Sparkle components inside out, preserving helper entitlements.
+for component in XPCServices/Installer.xpc XPCServices/Downloader.xpc Autoupdate Updater.app; do
+    codesign --force --sign "$signing_identity" --options runtime --preserve-metadata=entitlements "$framework/Versions/B/$component"
+done
+codesign --force --sign "$signing_identity" "$framework"
 plutil -lint "$app_dir/Contents/Info.plist"
 codesign --force --sign "$signing_identity" "$app_dir"
 codesign --verify --deep --strict "$app_dir"

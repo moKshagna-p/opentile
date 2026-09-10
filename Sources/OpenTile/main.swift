@@ -46,6 +46,7 @@ final class Outline {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor private lazy var appUpdater = AppUpdater()
     private let bridge = TouchBridge()
     private let drawing = WorkspaceDrawing()
     private let appDrawing = WorkspaceDrawing(apps: true)
@@ -99,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permission.target = self
         let capturePermission = menu.addItem(withTitle: "Screen Recording Settings…", action: #selector(openCaptureSettings), keyEquivalent: "")
         capturePermission.target = self
+        menu.addItem(.separator())
+        appUpdater.install(in: menu, statusButton: item.button)
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit OpenTile", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
