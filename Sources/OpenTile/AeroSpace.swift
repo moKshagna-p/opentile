@@ -27,8 +27,8 @@ struct AeroSpace {
         var errorDescription: String? { message }
     }
     let executable: URL
-    static func locate() -> AeroSpace? {
-        let paths = ["/opt/homebrew/bin/aerospace", "/usr/local/bin/aerospace", "/Applications/AeroSpace.app/Contents/MacOS/aerospace"]
+    static func locate(executableURL: URL? = Bundle.main.executableURL) -> AeroSpace? {
+        let paths = [executableURL?.deletingLastPathComponent().appendingPathComponent("aerospace").path].compactMap { $0 }
         return paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { AeroSpace(executable: URL(fileURLWithPath: $0)) }
     }
 

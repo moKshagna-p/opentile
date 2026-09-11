@@ -13,13 +13,14 @@ if [[ -z "$signing_identity" ]]; then
     fi
     signing_identity="$identities"
 fi
-version="${OPENTILE_VERSION:-0.2.1}"
-build_number="${OPENTILE_BUILD_NUMBER:-3}"
+version="${OPENTILE_VERSION:-0.3.0}"
+build_number="${OPENTILE_BUILD_NUMBER:-4}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
     echo "Use a semantic OPENTILE_VERSION and positive integer OPENTILE_BUILD_NUMBER." >&2
     exit 1
 fi
 swift build -c release
+swift build -c release --product aerospace
 bin_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/package/OpenTile.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Frameworks" "$app_dir/Contents/Resources"
@@ -34,6 +35,12 @@ iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/AppIcon.icns"
 framework="$app_dir/Contents/Frameworks/Sparkle.framework"
 ditto ".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$framework"
 cp "$bin_dir/OpenTile" "$app_dir/Contents/MacOS/OpenTile"
+cp "$bin_dir/aerospace" "$app_dir/Contents/MacOS/aerospace"
+ditto "$bin_dir/AeroSpacePackage_AppBundle.bundle" "$app_dir/Contents/Resources/AeroSpacePackage_AppBundle.bundle"
+mkdir -p "$app_dir/Contents/Resources/AeroSpace-Licenses"
+cp Vendor/AeroSpace/LICENSE.txt "$app_dir/Contents/Resources/AeroSpace-Licenses/LICENSE.txt"
+ditto Vendor/AeroSpace/legal "$app_dir/Contents/Resources/AeroSpace-Licenses/legal"
+codesign --force --sign "$signing_identity" "$app_dir/Contents/MacOS/aerospace"
 cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

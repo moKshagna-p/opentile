@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'Sources/**'
+      - 'Vendor/**'
       - 'Resources/**'
       - 'Tests/**'
       - 'Package.swift'

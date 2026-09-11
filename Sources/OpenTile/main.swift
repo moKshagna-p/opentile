@@ -1,4 +1,6 @@
 import AppKit
+import AppBundle
+import Combine
 import ApplicationServices
 import OpenTileCore
 
@@ -45,7 +47,7 @@ final class Outline {
     func hide() { panel.orderOut(nil) }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var appUpdater = AppUpdater()
     private let bridge = TouchBridge()
     private let drawing = WorkspaceDrawing()
@@ -77,16 +79,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let ghost = Outline(color: .secondaryLabelColor)
     private let preview = Outline(color: .systemTeal)
 
+    private var engineMessages: AnyCancellable?
+    private var workspaceIndicator: AnyCancellable?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let duplicates = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mokshagna.opentile")
+        guard !duplicates.contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) else {
+            NSApp.terminate(nil)
+            return
+        }
+        engineMessages = MessageModel.shared.$message.compactMap { $0 }.receive(on: DispatchQueue.main).sink { message in
+            let alert = NSAlert()
+            alert.messageText = message.description
+            alert.informativeText = message.body
+            alert.runModal()
+            MessageModel.shared.message = nil
+        }
+        let upstreamIDs = ["bobko.aerospace", "bobko.aerospace.debug"]
+        if upstreamIDs.contains(where: { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty }) {
+            let alert = NSAlert()
+            alert.messageText = "Quit AeroSpace before starting OpenTile"
+            alert.informativeText = "OpenTile now includes its own window manager. Quit AeroSpace, then reopen OpenTile so only one app manages your windows."
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
+        initAppBundle()
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "OpenTile")
+        item.button?.imagePosition = .imageLeading
+        workspaceIndicator = TrayMenuModel.shared.$trayText
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] text in
+                self?.item.button?.title = text.isEmpty ? "" : " \(text)"
+                self?.item.button?.setAccessibilityLabel(text.isEmpty ? "OpenTile" : "OpenTile workspaces: \(text)")
+            }
         let menu = NSMenu()
         menu.autoenablesItems = false
+        let workspaces = NSMenuItem(title: "Workspaces", action: nil, keyEquivalent: "")
+        let workspaceMenu = NSMenu(title: "Workspaces")
+        workspaceMenu.delegate = self
+        workspaces.submenu = workspaceMenu
+        menu.addItem(workspaces)
         statusItem = menu.addItem(withTitle: "Ready — enable gestures to begin", action: nil, keyEquivalent: "")
         statusItem.isEnabled = false
         menu.addItem(.separator())
         toggleItem = menu.addItem(withTitle: "Enable Gestures", action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
+        let reload = menu.addItem(withTitle: "Reload Window Manager Configuration", action: #selector(reloadEngine), keyEquivalent: "")
+        reload.target = self
+        let config = menu.addItem(withTitle: "Open Window Manager Configuration…", action: #selector(openEngineConfig), keyEquivalent: "")
+        config.target = self
         appDrawing.install(in: menu)
         appDrawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }
         appDrawing.onStatus = { [weak self] message in self?.status(message) }
@@ -130,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             status("Allow Accessibility, then enable gestures again")
             return
         }
-        guard AeroSpace.locate() != nil else { status("AeroSpace CLI not found — install AeroSpace first"); return }
+        guard AeroSpace.locate() != nil else { status("Bundled window manager CLI is missing — rebuild OpenTile"); return }
         guard bridge.start() else { status("No supported trackpad found"); return }
         recognizer = GestureRecognizer()
         enabled = true
@@ -233,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let (target, action) = destination {
             switch action {
             case .swap: preview.show(target.frame, text: "Swap windows · Release to exchange places", color: .systemPurple)
-            case .insert(let edge): preview.show(action.preview(in: target.frame), text: "Insert \(edge.rawValue) · AeroSpace sets final size", color: .systemTeal)
+            case .insert(let edge): preview.show(action.preview(in: target.frame), text: "Insert \(edge.rawValue) · OpenTile sets final size", color: .systemTeal)
             }
         } else { preview.hide() }
     }
@@ -319,6 +363,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceRequests.append(contentsOf: urls.compactMap { WorkspaceRequest(url: $0) })
     }
 
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        for workspace in openTileWorkspaces() {
+            let detail = workspace.windowCount == 0 ? "Empty" : workspace.applications.joined(separator: ", ")
+            let entry = menu.addItem(withTitle: "\(workspace.name) — \(detail)", action: #selector(selectWorkspace(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = workspace.name
+            entry.state = workspace.isFocused ? .on : .off
+            entry.toolTip = "\(workspace.windowCount) windows"
+        }
+    }
+
+    @objc private func selectWorkspace(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        workspaceRequests.append(.workspace(name))
+    }
+
     private func switchWorkspace(_ workspace: String) {
         guard enabled else { return }
         workspaceRequests.append(.workspace(workspace))
@@ -387,16 +448,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showHelp() {
         let alert = NSAlert()
         alert.messageText = "Move and resize tiles with gestures"
-        alert.informativeText = "Start AeroSpace and allow OpenTile in Accessibility Settings. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. AeroSpace determines the final size and position.\n\nTo open apps, hold Option and draw the shortcut letter with one finger, then release Option. Only apps from your active Karabiner Caps + O mappings are available. On the first drawing, select its shortcut and draw two more examples to teach it. You can also use Draw to Open App → Teach an App Symbol. Two fingers still resize.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Allow Screen Recording when prompted to enable the animation; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; AeroSpace determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.informativeText = "OpenTile includes its own AeroSpace window manager. Allow OpenTile in Accessibility Settings. Quit any other window manager before using OpenTile. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. OpenTile determines the final size and position.\n\nTo open apps, hold Option and draw the shortcut letter with one finger, then release Option. Only apps from your active Karabiner Caps + O mappings are available. On the first drawing, select its shortcut and draw two more examples to teach it. You can also use Draw to Open App → Teach an App Symbol. Two fingers still resize.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Allow Screen Recording when prompted to enable the animation; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; OpenTile determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
+    @MainActor @objc private func openEngineConfig() {
+        do { NSWorkspace.shared.open(try openTileConfigURL()) }
+        catch { status("Cannot open configuration: \(error.localizedDescription)") }
+    }
+
+    @objc private func reloadEngine() {
+        guard let engine = AeroSpace.locate() else { status("Bundled CLI is missing"); return }
+        worker.async { [weak self] in
+            let result = Result { try engine.run(["reload-config"]) }
+            DispatchQueue.main.async {
+                switch result {
+                case .success: self?.status("Window manager configuration reloaded")
+                case .failure(let error): self?.status(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     @objc private func quit() {
         guard !committing else { status("Wait for the layout change to finish before quitting"); return }
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {
+        stopOpenTileEngine()
         bridge.stop()
         timer?.invalidate()
         if let globalKeys { NSEvent.removeMonitor(globalKeys) }

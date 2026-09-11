@@ -2,21 +2,23 @@
 
 Trackpad gestures for [AeroSpace](https://github.com/nikitabobko/AeroSpace) on macOS. Move and resize tiled windows, or draw a symbol to switch workspaces.
 
-OpenTile is a menu bar companion to AeroSpace. AeroSpace handles the tiling; OpenTile adds gesture controls and visual previews.
+OpenTile bundles an AeroSpace-based tiling engine with gesture controls and visual previews. Run OpenTile on its own; quit the separate AeroSpace app first.
 
 ## Features
 
 - **Move tiles:** pinch and hold, then move two fingers to preview a swap or insertion.
 - **Resize tiles:** hold Option and pinch inward to grow or outward to shrink. The orange preview stays within the display’s usable area.
 - **Draw to switch:** teach OpenTile a number or symbol for each workspace using three examples, then draw it to switch.
-- **Workspace animations:** drawing switches use a vertical slide transition, with support for Reduce Motion.
+- **Workspace overview:** the menu bar shows the active workspace; the Workspaces menu lists running apps and empty workspaces.
+- **Existing configuration:** uses your AeroSpace configuration when no OpenTile configuration exists. Open and reload configuration from the menu.
+- **Workspace animations:** drawing, menu, and OpenTile URL switches use a vertical slide transition, with support for Reduce Motion. Direct engine commands and automatic app routing do not animate.
 
 ## Requirements
 
 - macOS 14 or later, an Apple Silicon Mac, and a built-in trackpad.
-- AeroSpace installed and running, with its CLI available.
+- Quit the separate AeroSpace app before starting OpenTile. The engine and CLI are bundled.
 - Accessibility permission for OpenTile. Screen Recording permission enables workspace animations.
-- Swift 6 toolchain to build from source.
+- Swift 6.2 or later to build from source. Full Xcode is needed for the XCTest suite; packaging works with a compatible Command Line Tools installation.
 
 ## Build and run
 
