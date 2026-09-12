@@ -7,7 +7,6 @@ import OpenTileCore
 /// Images are transient and never written to disk.
 @MainActor final class WorkspaceTransition {
     private var stack = WorkspaceStack(workspaces: UserDefaults.standard.stringArray(forKey: "workspaceStack") ?? [])
-    private var askedForCapture = false
 
     private struct Surface {
         let panel: NSPanel
@@ -26,12 +25,8 @@ import OpenTileCore
             surfaces.forEach { $0.panel.orderOut(nil) }
         }
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            var permitted = CGPreflightScreenCaptureAccess()
-            if !permitted && !askedForCapture {
-                askedForCapture = true
-                permitted = CGRequestScreenCaptureAccess()
-            }
-            if permitted { surfaces = (try? await prepare()) ?? [] }
+            // Permission requests belong to first-launch setup, never a workspace switch.
+            if CGPreflightScreenCaptureAccess() { surfaces = (try? await prepare()) ?? [] }
         }
         // Never leave a snapshot covering the desktop if capture stalls.
         let panels = surfaces.map(\.panel)

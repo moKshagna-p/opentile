@@ -49,6 +49,7 @@ final class Outline {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var appUpdater = AppUpdater()
+    @MainActor private lazy var permissions = PermissionSetup()
     private let bridge = TouchBridge()
     private let drawing = WorkspaceDrawing()
     private let appDrawing = WorkspaceDrawing(apps: true)
@@ -104,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
-        initAppBundle()
+        initAppBundle(promptForAccessibility: false)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "OpenTile")
         item.button?.imagePosition = .imageLeading
@@ -140,6 +141,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         drawing.onSwitch = { [weak self] workspace in self?.switchWorkspace(workspace) }
         let help = menu.addItem(withTitle: "How to Use OpenTile…", action: #selector(showHelp), keyEquivalent: "")
         help.target = self
+        let setup = menu.addItem(withTitle: "Permission Setup…", action: #selector(showPermissionSetup), keyEquivalent: "")
+        setup.target = self
         let permission = menu.addItem(withTitle: "Accessibility Settings…", action: #selector(openSettings), keyEquivalent: "")
         permission.target = self
         let capturePermission = menu.addItem(withTitle: "Screen Recording Settings…", action: #selector(openCaptureSettings), keyEquivalent: "")
@@ -160,18 +163,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.disable() }
         timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer!, forMode: .common)
-        if !UserDefaults.standard.bool(forKey: "hasShownHelp") {
-            UserDefaults.standard.set(true, forKey: "hasShownHelp")
-            showHelp()
-        }
+        if permissions.shouldShowOnLaunch { showPermissionSetup() }
     }
 
     @objc private func toggle() {
         if enabled { disable(); return }
         guard AXIsProcessTrusted() else {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(options)
-            status("Allow Accessibility, then enable gestures again")
+            status("Accessibility is off — open Permission Setup from the menu")
             return
         }
         guard AeroSpace.locate() != nil else { status("Bundled window manager CLI is missing — rebuild OpenTile"); return }
@@ -439,6 +437,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.title = message
         item.button?.toolTip = "OpenTile: \(message)"
     }
+    @MainActor @objc private func showPermissionSetup() {
+        permissions.show()
+    }
     @objc private func openSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
@@ -448,7 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func showHelp() {
         let alert = NSAlert()
         alert.messageText = "Move and resize tiles with gestures"
-        alert.informativeText = "OpenTile includes its own AeroSpace window manager. Allow OpenTile in Accessibility Settings. Quit any other window manager before using OpenTile. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. OpenTile determines the final size and position.\n\nTo open apps, hold Option and draw the shortcut letter with one finger, then release Option. Only apps from your active Karabiner Caps + O mappings are available. On the first drawing, select its shortcut and draw two more examples to teach it. You can also use Draw to Open App → Teach an App Symbol. Two fingers still resize.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Allow Screen Recording when prompted to enable the animation; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; OpenTile determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
+        alert.informativeText = "OpenTile includes its own AeroSpace window manager. Allow OpenTile in Accessibility Settings. Quit any other window manager before using OpenTile. Enable gestures from the menu bar.\n\nFocus a tiled window. Place two fingers on the trackpad, pinch inward, hold briefly, then move them together. An outline follows your gesture. Release over the middle of another tile when the purple “Swap windows” preview appears to exchange their places. Release near its edge with the teal preview to insert beside it. Press Escape before release to cancel.\n\nTo resize, hold Option before placing two fingers on the trackpad. Pinch inward to grow the focused tile or spread outward to shrink it. The orange outline previews the requested size; lift to apply or press Escape to cancel. The gesture mode stays fixed until all fingers lift. Side-by-side tiles change width; stacked tiles change height, with neighboring tiles adjusting. OpenTile determines the final size and position.\n\nTo open apps, hold Option and draw the shortcut letter with one finger, then release Option. Only apps from your active Karabiner Caps + O mappings are available. On the first drawing, select its shortcut and draw two more examples to teach it. You can also use Draw to Open App → Teach an App Symbol. Two fingers still resize.\n\nTo switch workspaces by drawing, hold Control–Option, draw with one finger, and release the keys. If the symbol is new, enter its workspace name when prompted, then draw two more examples to save it. Draw a saved symbol to switch. You can also start training from Draw to Switch Workspace → Teach a Workspace Symbol. Escape cancels. You can change the activation keys in the drawing menu. Drawing switches slide vertically in first-visited workspace order. Enable Screen Recording in Permission Setup for animations; snapshots stay in memory. Reduce Motion skips the slide.\n\nTile movement supports tiles in the current workspace. The preview indicates placement; OpenTile determines final sizes. macOS trackpad gestures can also respond, so two-finger pinch-to-zoom may also respond.\n\nExperimental: the private trackpad interface has been verified only on Apple Silicon."
         alert.addButton(withTitle: "Got It")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()

@@ -2,7 +2,9 @@ import AppKit
 import Common
 import Foundation
 
-@MainActor public func initAppBundle() {
+@MainActor public func initAppBundle(promptForAccessibility: Bool = true) {
+    // Embedded hosts own onboarding; the engine only waits for their grant.
+    if !promptForAccessibility { TrayMenuModel.shared.axPermissionStatus = .waiting }
     Task.startUnstructured {
         initTerminationHandler()
         unsafe _isCli = false
