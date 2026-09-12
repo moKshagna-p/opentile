@@ -20,6 +20,13 @@ if [[ -e "$release_dir" ]]; then
     exit 1
 fi
 scripts/package.sh
+# Public updates must keep a consistent Developer ID identity so macOS can
+# recognize the app's designated requirement and preserve privacy grants.
+signature="$(codesign -dv .build/package/OpenTile.app 2>&1)"
+if ! printf '%s\n' "$signature" | grep -q '^Authority=Developer ID Application:'; then
+    echo "Public releases require OPENTILE_SIGNING_IDENTITY set to a Developer ID Application certificate. Use the same developer team for every release." >&2
+    exit 1
+fi
 mkdir -p "$release_dir"
 archive="OpenTile-$1-macOS-arm64.zip"
 cp .build/package/OpenTile-macOS-arm64.zip "$release_dir/$archive"
