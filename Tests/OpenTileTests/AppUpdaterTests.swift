@@ -1,30 +1,33 @@
+import Foundation
 import AppKit
-import XCTest
+import Testing
 @testable import OpenTile
 
-final class AppUpdaterTests: XCTestCase {
+struct AppUpdaterTests {
+    @Test
     func testUnpackagedExecutableDisablesUpdater() async {
         await MainActor.run {
             let updater = AppUpdater()
             let menu = NSMenu()
             menu.autoenablesItems = false
             updater.install(in: menu, statusButton: nil)
-            XCTAssertEqual(menu.items.count, 2)
-            XCTAssertEqual(menu.items[0].title, "Updates require a packaged app")
-            XCTAssertTrue(menu.items.allSatisfy { !$0.isEnabled })
+            #expect((menu.items.count) == (2))
+            #expect((menu.items[0].title) == ("Updates require a packaged app"))
+            #expect(menu.items.allSatisfy { !$0.isEnabled })
         }
     }
 
+    @Test
     func testUpdateReminderAndSessionReset() async {
         await MainActor.run {
             let updater = AppUpdater()
             let menu = NSMenu()
             updater.install(in: menu, statusButton: nil)
-            XCTAssertTrue(updater.supportsGentleScheduledUpdateReminders)
+            #expect(updater.supportsGentleScheduledUpdateReminders)
             updater.showAvailableUpdate(version: "0.3.0")
-            XCTAssertEqual(menu.items[0].title, "Update Available… (0.3.0)")
+            #expect((menu.items[0].title) == ("Update Available… (0.3.0)"))
             updater.standardUserDriverWillFinishUpdateSession()
-            XCTAssertEqual(menu.items[0].title, "Check for Updates…")
+            #expect((menu.items[0].title) == ("Check for Updates…"))
         }
     }
 }

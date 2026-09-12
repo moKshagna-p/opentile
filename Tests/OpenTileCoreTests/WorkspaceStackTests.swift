@@ -1,21 +1,24 @@
-import XCTest
+import Foundation
+import Testing
 @testable import OpenTileCore
 
-final class WorkspaceStackTests: XCTestCase {
+struct WorkspaceStackTests {
+    @Test
     func testFirstVisitsEnterFromBelowAndRevisitsPreserveOrder() {
         var stack = WorkspaceStack()
-        XCTAssertEqual(stack.direction(from: "Codex", to: "Music"), 1)
-        XCTAssertEqual(stack.direction(from: "Music", to: "WhatsApp"), 1)
-        XCTAssertEqual(stack.direction(from: "WhatsApp", to: "Codex"), -1)
-        XCTAssertEqual(stack.direction(from: "Codex", to: "WhatsApp"), 1)
-        XCTAssertEqual(stack.workspaces, ["Codex", "Music", "WhatsApp"])
-        XCTAssertEqual(stack.direction(from: "WhatsApp", to: "WhatsApp"), 0)
+        #expect((stack.direction(from: "Codex", to: "Music")) == (1))
+        #expect((stack.direction(from: "Music", to: "WhatsApp")) == (1))
+        #expect((stack.direction(from: "WhatsApp", to: "Codex")) == (-1))
+        #expect((stack.direction(from: "Codex", to: "WhatsApp")) == (1))
+        #expect((stack.workspaces) == (["Codex", "Music", "WhatsApp"]))
+        #expect((stack.direction(from: "WhatsApp", to: "WhatsApp")) == (0))
     }
 
+    @Test
     func testRestoredOrderAndExternallyVisitedWorkspace() {
         var stack = WorkspaceStack(workspaces: ["Codex", "", "Music", "Codex", "WhatsApp"])
-        XCTAssertEqual(stack.workspaces, ["Codex", "Music", "WhatsApp"])
-        XCTAssertEqual(stack.direction(from: "Browser", to: "Music"), -1)
-        XCTAssertEqual(stack.workspaces, ["Codex", "Music", "WhatsApp", "Browser"])
+        #expect((stack.workspaces) == (["Codex", "Music", "WhatsApp"]))
+        #expect((stack.direction(from: "Browser", to: "Music")) == (-1))
+        #expect((stack.workspaces) == (["Codex", "Music", "WhatsApp", "Browser"]))
     }
 }
