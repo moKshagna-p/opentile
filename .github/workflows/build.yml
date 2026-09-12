@@ -1,27 +1,30 @@
 name: Build macOS app
 on:
   push:
-    paths:
-      - 'Sources/**'
-      - 'Vendor/**'
-      - 'Resources/**'
-      - 'Tests/**'
-      - 'Package.swift'
-      - 'Package.resolved'
-      - 'scripts/**'
-      - '.github/workflows/build.yml'
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
+    timeout-minutes: 30
     runs-on: macos-15
     env:
       # Both OpenTile and the embedded AeroSpace package require Swift 6.2.
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check shell syntax
+        run: |
+          bash -n build.sh
+          for script in scripts/*.sh; do bash -n "$script"; done
       - name: Verify Apple Silicon runner and toolchain
         run: |
           test "$(uname -m)" = arm64
@@ -34,7 +37,7 @@ jobs:
           OPENTILE_SIGNING_IDENTITY: "-"
         run: scripts/package.sh
       - name: Upload downloadable application
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: OpenTile-macOS-arm64
           path: |
