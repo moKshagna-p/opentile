@@ -79,20 +79,20 @@ scripts/test.sh
 scripts/test.sh --filter PermissionSetupTests
 ```
 
-The script supplies framework and runtime paths when using Command Line Tools. The current suite contains 51 tests covering gestures, app mapping, workspace drawing and switching, the embedded engine, updater behavior, and permission setup logic.
+The script supplies framework and runtime paths when using Command Line Tools. The suite covers gestures, app mapping, workspace drawing and switching, the embedded engine, updater behavior, permission setup logic, and runtime scheduling.
 
-The [Build macOS app workflow](.github/workflows/build.yml) runs on relevant source, dependency, resource, test, script, and workflow pushes; every pull request; and manual dispatch. It:
+The [Build macOS app workflow](.github/workflows/build.yml) runs on every push to `main`, `v*` tags, every pull request, and manual dispatch. Superseded runs are cancelled and jobs are limited to 30 minutes. It:
 
-1. Checks the Apple Silicon runner and reports the toolchain, using macOS 15 with Xcode 26.2.
+1. Checks shell script syntax and the Apple Silicon runner and reports the toolchain, using macOS 15 with Xcode 26.2.
 2. Runs `scripts/test.sh`.
 3. Builds and packages an ad hoc signed app with `scripts/package.sh`.
 4. Uploads the app ZIP and SHA256 checksum as `OpenTile-macOS-arm64`, retained for 30 days.
 
-CI does not exercise physical trackpad input, real macOS permission dialogs, or permission persistence across installed updates. These need manual testing. CI artifacts are development builds, not public release packages. README-only pushes do not trigger the workflow.
+CI does not exercise physical trackpad input, real macOS permission dialogs, or permission persistence across installed updates. These need manual testing. CI artifacts are development builds, not public release packages. Documentation-only changes also run CI. Weekly Dependabot PRs propose GitHub Actions and SwiftPM updates for review.
 
 ## Preparing public releases
 
-Release preparation requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
+The current v0.3.1 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
 
 ```sh
 OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
@@ -100,6 +100,8 @@ OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 ```
 
 Replace `VERSION` with a semantic version and `BUILD_NUMBER` with a positive integer, increasing both for each release. The script rejects non-Developer-ID builds and prepares the versioned ZIP, `appcast.xml`, and `SHA256.txt` under `.build/releases/vVERSION/`. Publish all three on the matching GitHub release to make the update available. The script does not publish or notarize the app.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout, development checks, and maintenance automation, and [RELEASING.md](RELEASING.md) for the release checklist and current signing limitations.
 
 ## Status
 
