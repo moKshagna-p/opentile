@@ -168,6 +168,9 @@ final class WorkspaceDrawing: NSObject {
             panel.orderFrontRegardless()
         }
     }
+    /// Keep timeout checks alive while a drawing chord owns input.
+    var needsPolling: Bool { held && !blocked }
+
     func cancel() { blocked = true; panel.orderOut(nil); capture = DrawingCapture() }
     func stop() { cancelTraining(); held = false; appGate = AppDrawingGate() }
 

@@ -13,6 +13,20 @@ struct GestureTests {
         #expect((recognizer.update(contacts(0.10), time: 0.3)) == (.began(CGPoint(x: 0.5, y: 0.5))))
     }
     @Test
+    func sustainedGestureReplayDoesNotRetainReleasedState() {
+        var recognizer = GestureRecognizer()
+        for cycle in 0..<2_000 {
+            let time = Double(cycle) * 2
+            #expect(recognizer.update(contacts(), time: time) == nil)
+            #expect(recognizer.update(contacts(0.1), time: time + 0.1) == nil)
+            #expect(recognizer.update(contacts(0.1), time: time + 0.4) == .began(CGPoint(x: 0.5, y: 0.5)))
+            #expect(recognizer.update(contacts(0.1, x: 0.6), time: time + 0.5) == .moved(CGPoint(x: 0.6, y: 0.5)))
+            #expect(recognizer.update([], time: time + 0.6) == .released)
+            #expect(recognizer.update([], time: time + 0.7) == nil)
+        }
+    }
+
+    @Test
     func testPinchHoldDragRelease() {
         var r = GestureRecognizer(); arm(&r)
         #expect((r.update(contacts(0.1, x: 0.6), time: 0.4)) == (.moved(CGPoint(x: 0.6, y: 0.5))))

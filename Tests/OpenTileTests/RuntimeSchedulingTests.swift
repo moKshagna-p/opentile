@@ -67,3 +67,36 @@ private func drainMainQueue() async {
     await drainMainQueue()
     #expect(received == [.workspace("1"), .workspace("2")])
 }
+
+@Test @MainActor func gesturePollingSettlesAndSurvivesRepeatedWakePauseCycles() {
+    let polling = GesturePolling()
+    var ticks = 0
+    for _ in 0..<2_000 {
+        polling.start { ticks += 1 }
+        let timer = polling.timer!
+        polling.start { ticks += 100 }
+        timer.fire()
+        polling.settle(idleFor: 0.45, drawingActive: false)
+        #expect(timer.isValid) // Missing-frame cancellation must get its tick.
+        polling.settle(idleFor: 2, drawingActive: true)
+        #expect(timer.isValid) // Drawing must still time out without new frames.
+        polling.settle(idleFor: 0.51, drawingActive: false)
+        #expect(polling.timer == nil)
+        #expect(!timer.isValid)
+        polling.stop()
+        timer.fire()
+    }
+    #expect(ticks == 2_000)
+}
+
+@Test @MainActor func workspaceQueueSustainedFIFO() async {
+    var received: [WorkspaceRequest] = []
+    let queue = WorkspaceRequestQueue { received.append($0) }
+    let requests = (0..<1_000).map { WorkspaceRequest.workspace(String($0)) }
+    requests.forEach(queue.append)
+    queue.isReady = true
+    for _ in requests { await drainMainQueue() }
+    #expect(received == requests)
+    await drainMainQueue()
+    #expect(received.count == requests.count)
+}

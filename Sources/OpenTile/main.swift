@@ -157,11 +157,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let quit = menu.addItem(withTitle: "Quit OpenTile", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         item.menu = menu
-        globalKeys = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { self?.cancel() }
+        globalKeys = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+            if event.type == .flagsChanged { self?.wakeGestureProcessing() }
+            if event.type == .keyDown && event.keyCode == 53 { self?.cancel() }
         }
-        localKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { self?.cancel() }
+        localKeys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+            if event.type == .flagsChanged { self?.wakeGestureProcessing() }
+            if event.type == .keyDown && event.keyCode == 53 { self?.cancel() }
             return event
         }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.disable() }
@@ -176,10 +178,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         guard AeroSpace.locate() != nil else { status("Bundled window manager CLI is missing — rebuild OpenTile"); return }
-        guard bridge.start() else { status("No supported trackpad found"); return }
+        guard bridge.start(onFrames: { [weak self] in self?.wakeGestureProcessing() }) else { status("No supported trackpad found"); return }
         recognizer = GestureRecognizer()
         enabled = true
-        polling.start { [weak self] in self?.tick() }
+        wakeGestureProcessing()
         toggleItem.title = "Pause Gestures"
         status("Pinch and hold to move · Option + pinch to resize")
     }
@@ -195,10 +197,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         status("Gestures paused")
     }
 
+    private func wakeGestureProcessing() {
+        guard enabled else { return }
+        polling.start { [weak self] in self?.tick() }
+    }
+
     private func tick() {
         guard enabled else { return }
         guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
         let frames = bridge.drain()
+        if !frames.isEmpty { lastFrame = ProcessInfo.processInfo.systemUptime }
+        defer {
+            polling.settle(idleFor: ProcessInfo.processInfo.systemUptime - lastFrame,
+                           drawingActive: drawing.needsPolling || appDrawing.needsPolling)
+        }
         if drawing.process(frames, allowed: !committing) {
             appDrawing.cancel()
             generation += 1
@@ -217,7 +229,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recognizer = GestureRecognizer()
             appDrawingOwnedFrames = false
         }
-        if !frames.isEmpty { lastFrame = ProcessInfo.processInfo.systemUptime }
         for frame in frames {
             guard let event = recognizer.update(frame.contacts, time: frame.time, optionHeld: frame.optionHeld) else { continue }
             switch event {

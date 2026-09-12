@@ -12,6 +12,11 @@ final class GesturePolling {
         RunLoop.main.add(timer, forMode: .common)
     }
 
+    /// Leave enough quiet time for the 0.4 second missing-frame cancellation.
+    func settle(idleFor: TimeInterval, drawingActive: Bool) {
+        if idleFor > 0.5 && !drawingActive { stop() }
+    }
+
     func stop() {
         timer?.invalidate()
         timer = nil

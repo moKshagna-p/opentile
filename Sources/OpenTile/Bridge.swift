@@ -9,15 +9,17 @@ final class TouchBridge {
     private static let lock = NSLock()
     private static var frames: [Frame] = []
     private static var accepting = false
+    private static var onFrames: (() -> Void)?
     private var device: MTDeviceRef?
 
-    func start() -> Bool {
+    func start(onFrames: @escaping () -> Void) -> Bool {
         guard device == nil else { return true }
         guard let device = MTDeviceCreateDefault() else { return false }
         self.device = device
         Self.lock.lock()
         Self.frames = []
         Self.accepting = true
+        Self.onFrames = onFrames
         Self.lock.unlock()
         MTRegisterContactFrameCallback(device, { _, touches, count, time, _ in
             guard count >= 0, count <= 16, count == 0 || touches != nil else { return 0 }
@@ -30,6 +32,14 @@ final class TouchBridge {
             }
             TouchBridge.lock.lock()
             if TouchBridge.accepting {
+                if TouchBridge.frames.isEmpty {
+                    DispatchQueue.main.async {
+                        TouchBridge.lock.lock()
+                        let notify = TouchBridge.onFrames
+                        TouchBridge.lock.unlock()
+                        notify?()
+                    }
+                }
                 // Overflow is a cancellation, never an accidental drop.
                 if TouchBridge.frames.count >= 256 {
                     TouchBridge.frames = [.init(contacts: [], time: .nan, optionHeld: false)]
@@ -54,6 +64,7 @@ final class TouchBridge {
     func stop() {
         Self.lock.lock()
         Self.accepting = false
+        Self.onFrames = nil
         Self.frames = []
         Self.lock.unlock()
         if let device { MTDeviceStop(device); MTDeviceRelease(device) }
