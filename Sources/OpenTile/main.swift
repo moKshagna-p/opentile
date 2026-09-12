@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var workspaceTransition = WorkspaceTransition()
     private var recognizer = GestureRecognizer()
     private let worker = DispatchQueue(label: "OpenTile.AeroSpace")
-    private var timer: Timer?
+    private let polling = GesturePolling()
     private var globalKeys: Any?
     private var localKeys: Any?
     private var sleepObserver: NSObjectProtocol?
@@ -65,8 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var toggleItem: NSMenuItem!
     private var statusItem: NSMenuItem!
     private var enabled = false
-    private var committing = false
-    private var workspaceRequests: [WorkspaceRequest] = []
+    private var committing = false {
+        didSet { workspaceRequests.isBusy = committing }
+    }
+    private lazy var workspaceRequests = WorkspaceRequestQueue { [weak self] in
+        self?.switchWorkspace($0)
+    }
     private var generation = 0
     private var snapshot: DesktopSnapshot?
     private var resizing = false
@@ -161,8 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return event
         }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.disable() }
-        timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(timer!, forMode: .common)
+        workspaceRequests.isReady = true
         if permissions.shouldShowOnLaunch { showPermissionSetup() }
     }
 
@@ -176,6 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard bridge.start() else { status("No supported trackpad found"); return }
         recognizer = GestureRecognizer()
         enabled = true
+        polling.start { [weak self] in self?.tick() }
         toggleItem.title = "Pause Gestures"
         status("Pinch and hold to move · Option + pinch to resize")
     }
@@ -183,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func disable() {
         cancel()
         enabled = false
+        polling.stop()
         bridge.stop()
         drawing.stop()
         appDrawing.stop()
@@ -191,9 +196,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func tick() {
-        if !committing, !workspaceRequests.isEmpty {
-            switchWorkspace(workspaceRequests.removeFirst())
-        }
         guard enabled else { return }
         guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
         let frames = bridge.drain()
@@ -358,7 +360,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        workspaceRequests.append(contentsOf: urls.compactMap { WorkspaceRequest(url: $0) })
+        for request in urls.compactMap({ WorkspaceRequest(url: $0) }) {
+            workspaceRequests.append(request)
+        }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -479,7 +483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         stopOpenTileEngine()
         bridge.stop()
-        timer?.invalidate()
+        polling.stop()
         if let globalKeys { NSEvent.removeMonitor(globalKeys) }
         if let localKeys { NSEvent.removeMonitor(localKeys) }
         if let sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver) }
