@@ -66,6 +66,14 @@ For a new workspace symbol, follow the training prompt or choose **Draw to Switc
 
 For app symbols, choose **Draw to Open App → Teach an App Symbol** and save three examples. Available apps come from the active Caps + O layer in `~/.config/karabiner/karabiner.json`; arbitrary Karabiner actions are not imported.
 
+## Wallpapers
+
+Press **Control–Option–W**, or choose **Choose Wallpaper…** from the menu bar. Type a name or source to filter, use the arrow keys to select, and press Return to apply to every connected display’s current desktop. Escape clears the search, then closes the picker. **Command–O** opens a file/folder browser; added folders are remembered. This works while gestures are paused.
+
+The picker includes images from Downloads, Pictures/Wallpapers, local macOS desktop pictures, and downloaded Apple aerials. Aerial videos become persistent still images in `~/Library/Application Support/OpenTile/Wallpaper Stills`. It does not download Apple assets or provide live video wallpapers.
+
+The slanted carousel and 420 ms center-out diagonal reveal follow [Omarchy’s wallpaper interface](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Reduce Motion skips transitions. Wallpaper changes use native macOS APIs without Screen Recording permission.
+
 ## Configuration
 
 OpenTile checks `~/.opentile.toml` and `${XDG_CONFIG_HOME:-~/.config}/opentile/opentile.toml` before falling back to your AeroSpace configuration. Use the menu to open or reload configuration. A separate AeroSpace installation is not required.

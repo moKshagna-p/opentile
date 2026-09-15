@@ -50,6 +50,7 @@ final class Outline {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var appUpdater = AppUpdater()
     @MainActor private lazy var permissions = PermissionSetup()
+    @MainActor private lazy var wallpaperPicker = WallpaperPicker()
     private let bridge = TouchBridge()
     private let drawing = WorkspaceDrawing()
     private let appDrawing = WorkspaceDrawing(apps: true)
@@ -136,6 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reload.target = self
         let config = menu.addItem(withTitle: "Open Window Manager Configuration…", action: #selector(openEngineConfig), keyEquivalent: "")
         config.target = self
+        wallpaperPicker.onStatus = { [weak self] in self?.status($0) }
+        wallpaperPicker.install(in: menu)
         appDrawing.install(in: menu)
         appDrawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }
         appDrawing.onStatus = { [weak self] message in self?.status(message) }
@@ -166,7 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if event.type == .keyDown && event.keyCode == 53 { self?.cancel() }
             return event
         }
-        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.disable() }
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.wallpaperPicker.cancel()
+            self?.disable()
+        }
         workspaceRequests.isReady = true
         if permissions.shouldShowOnLaunch { showPermissionSetup() }
     }
@@ -492,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {
+        wallpaperPicker.stop()
         stopOpenTileEngine()
         bridge.stop()
         polling.stop()
