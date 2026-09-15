@@ -113,8 +113,9 @@ import UniformTypeIdentifiers
         caption.stringValue = "Looking for local wallpapers…"
         hint.stringValue = "Downloads · Pictures/Wallpapers · macOS · your folders"
         let extra = (UserDefaults.standard.stringArray(forKey: "wallpaperFolders") ?? []).map { URL(fileURLWithPath: $0) }
-        let roots = WallpaperLibrary.roots(additional: extra)
-        let task = Task.detached(priority: .userInitiated) { WallpaperLibrary.scan(roots: roots, cancelled: { Task.isCancelled }) }
+        let task = Task.detached(priority: .userInitiated) {
+            WallpaperLibrary.scan(roots: WallpaperLibrary.roots(additional: extra), cancelled: { Task.isCancelled })
+        }
         scanTask = task
         Task { [weak self] in
             let result = await task.value

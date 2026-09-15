@@ -24,7 +24,8 @@ enum WallpaperLibrary {
 
     static func roots(additional: [URL] = []) -> [(URL, String)] {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return [
+        return settingsFiles().map { ($0, "macOS Settings") } + [
+            (home.appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials/videos"), "macOS aerial"),
             (home.appendingPathComponent("Downloads"), "Downloads"),
             (home.appendingPathComponent("Pictures/Wallpapers"), "Wallpapers"),
             (URL(fileURLWithPath: "/System/Library/Desktop Pictures"), "macOS"),
@@ -40,8 +41,13 @@ enum WallpaperLibrary {
         let names = aerialNames()
         for (root, source) in roots {
             guard !cancelled() else { return [] }
-            guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
-            for case let url as URL in enumerator {
+            let files: AnySequence<URL>
+            if (try? root.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                files = AnySequence([root])
+            } else if let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+                files = AnySequence { AnyIterator { enumerator.nextObject() as? URL } }
+            } else { continue }
+            for url in files {
                 guard !cancelled() else { return [] }
                 guard imageExtensions.contains(url.pathExtension.lowercased()) || videoExtensions.contains(url.pathExtension.lowercased()),
                       (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
@@ -56,13 +62,41 @@ enum WallpaperLibrary {
         }
     }
 
+    /// Best-effort, read-only discovery; this private store may change between macOS versions.
+    static func settingsFiles(data: Data? = nil) -> [URL] {
+        let store = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.apple.wallpaper/Store/Index.plist")
+        guard let data = data ?? (try? Data(contentsOf: store)),
+              let value = try? PropertyListSerialization.propertyList(from: data, format: nil) else { return [] }
+        var urls = Set<URL>()
+        func visit(_ value: Any, depth: Int) {
+            guard depth < 24 else { return }
+            if let dictionary = value as? [String: Any] {
+                for child in dictionary.values { visit(child, depth: depth + 1) }
+            } else if let array = value as? [Any] {
+                for child in array { visit(child, depth: depth + 1) }
+            } else if let data = value as? Data,
+                      let child = try? PropertyListSerialization.propertyList(from: data, format: nil) {
+                visit(child, depth: depth + 1)
+            } else if let string = value as? String, let url = URL(string: string), url.isFileURL,
+                      url.host == nil || url.host == "" || url.host == "localhost" {
+                urls.insert(url.resolvingSymlinksInPath().standardizedFileURL)
+            }
+        }
+        visit(value, depth: 0)
+        return urls.sorted { $0.path < $1.path }
+    }
+
     private static func aerialNames() -> [String: String] {
-        guard let data = try? Data(contentsOf: aerialRoot.appendingPathComponent("entries.json")),
-              let catalog = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let assets = catalog["assets"] as? [[String: Any]] else { return [:] }
+        let catalogs = [aerialRoot.appendingPathComponent("entries.json"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials/manifest/entries.json")]
         var names: [String: String] = [:]
-        for asset in assets {
-            if let id = asset["id"] as? String, let label = asset["accessibilityLabel"] as? String { names[id] = label }
+        for url in catalogs {
+            guard let data = try? Data(contentsOf: url),
+                  let catalog = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let assets = catalog["assets"] as? [[String: Any]] else { continue }
+            for asset in assets {
+                if let id = asset["id"] as? String, let label = asset["accessibilityLabel"] as? String { names[id] = label }
+            }
         }
         return names
     }

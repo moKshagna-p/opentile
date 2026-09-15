@@ -24,6 +24,24 @@ struct WallpaperTests {
         #expect(WallpaperLibrary.scan(roots: [(root, "Downloads")], cancelled: { true }).isEmpty)
     }
 
+    @Test func settingsDiscoveryReadsNestedConfigurationsAndRejectsRemoteURLs() throws {
+        let nested = try PropertyListSerialization.data(fromPropertyList: ["url": ["relative": "file:///tmp/My%20Wallpaper.jpg"]], format: .binary, options: 0)
+        let data = try PropertyListSerialization.data(fromPropertyList: ["Choices": [["Configuration": nested], ["Files": ["file:///tmp/My%20Wallpaper.jpg", "https://example.com/photo.jpg", "file://server/share/image.jpg"]]]], format: .binary, options: 0)
+        #expect(WallpaperLibrary.settingsFiles(data: data) == [URL(fileURLWithPath: "/tmp/My Wallpaper.jpg")])
+        #expect(WallpaperLibrary.settingsFiles(data: Data("invalid".utf8)).isEmpty)
+    }
+
+    @Test func wallpaperScanAcceptsSettingsFileReferencesAndDeduplicatesFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let photo = root.appendingPathComponent("Photo.png")
+        try Data().write(to: photo)
+        let entries = WallpaperLibrary.scan(roots: [(photo, "macOS Settings"), (root, "Downloads"), (root.appendingPathComponent("missing.jpg"), "Missing")])
+        #expect(entries.count == 1)
+        #expect(entries.first?.source == "macOS Settings")
+    }
+
     @Test func wallpaperDecodeReportsUnreadableFile() {
         #expect(throws: WallpaperError.self) {
             try WallpaperLibrary.image(at: URL(fileURLWithPath: "/nonexistent/opentile-wallpaper.png"), maxPixels: 100)

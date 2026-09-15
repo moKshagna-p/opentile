@@ -74,6 +74,8 @@ The picker includes images from Downloads, Pictures/Wallpapers, local macOS desk
 
 The slanted carousel and 420 ms center-out diagonal reveal follow [Omarchy’s wallpaper interface](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Reduce Motion skips transitions. Wallpaper changes use native macOS APIs without Screen Recording permission.
 
+Local image references saved in macOS Wallpaper settings also appear in the picker, even when stored outside Downloads. Discovery reads the Settings store without changing it and supports downloaded aerials in both system and user libraries. The Settings store is a best-effort source: Apple's generated wallpapers, Photos-library-only items, and cloud-only catalog previews are not exported as ordinary image files. Use **⌘O** to add a local image if it is missing.
+
 ## Configuration
 
 OpenTile checks `~/.opentile.toml` and `${XDG_CONFIG_HOME:-~/.config}/opentile/opentile.toml` before falling back to your AeroSpace configuration. Use the menu to open or reload configuration. A separate AeroSpace installation is not required.
