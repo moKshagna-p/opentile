@@ -102,7 +102,7 @@ CI does not exercise physical trackpad input, real macOS permission dialogs, or 
 
 ## Preparing public releases
 
-The current v0.3.1 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
+The current v0.4.0 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
 
 ```sh
 OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
