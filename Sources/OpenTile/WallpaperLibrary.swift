@@ -20,25 +20,21 @@ struct WallpaperEntry: Equatable, Sendable {
 enum WallpaperLibrary {
     static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "webp", "bmp", "gif"]
     static let videoExtensions: Set<String> = ["mov", "mp4", "m4v"]
-    static let aerialRoot = URL(fileURLWithPath: "/Library/Application Support/com.apple.idleassetsd/Customer", isDirectory: true)
+    static func folder(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        home.appendingPathComponent("Pictures/Wallpapers", isDirectory: true)
+    }
 
-    static func roots(additional: [URL] = []) -> [(URL, String)] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return settingsFiles().map { ($0, "macOS Settings") } + [
-            (home.appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials/videos"), "macOS aerial"),
-            (home.appendingPathComponent("Downloads"), "Downloads"),
-            (home.appendingPathComponent("Pictures/Wallpapers"), "Wallpapers"),
-            (URL(fileURLWithPath: "/System/Library/Desktop Pictures"), "macOS"),
-            (URL(fileURLWithPath: "/System/Library/AssetsV2/com_apple_MobileAsset_DesktopPicture"), "macOS"),
-            (aerialRoot, "macOS aerial")
-        ] + additional.map { ($0, $0.lastPathComponent) }
+    @discardableResult
+    static func ensureFolder(home: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> URL {
+        let url = folder(home: home)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
     }
 
     static func scan(roots: [(URL, String)], cancelled: () -> Bool = { false }) -> [WallpaperEntry] {
         let fm = FileManager.default
         var entries: [WallpaperEntry] = []
         var seen = Set<URL>()
-        let names = aerialNames()
         for (root, source) in roots {
             guard !cancelled() else { return [] }
             let files: AnySequence<URL>
@@ -53,52 +49,13 @@ enum WallpaperLibrary {
                       (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
                 let canonical = url.resolvingSymlinksInPath().standardizedFileURL
                 guard seen.insert(canonical).inserted else { continue }
-                entries.append(WallpaperEntry(url: canonical, name: names[url.deletingPathExtension().lastPathComponent] ?? url.deletingPathExtension().lastPathComponent, source: source))
+                entries.append(WallpaperEntry(url: canonical, name: url.deletingPathExtension().lastPathComponent, source: source))
             }
         }
         return entries.sorted {
             let comparison = $0.name.localizedStandardCompare($1.name)
             return comparison == .orderedSame ? $0.url.path < $1.url.path : comparison == .orderedAscending
         }
-    }
-
-    /// Best-effort, read-only discovery; this private store may change between macOS versions.
-    static func settingsFiles(data: Data? = nil) -> [URL] {
-        let store = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.apple.wallpaper/Store/Index.plist")
-        guard let data = data ?? (try? Data(contentsOf: store)),
-              let value = try? PropertyListSerialization.propertyList(from: data, format: nil) else { return [] }
-        var urls = Set<URL>()
-        func visit(_ value: Any, depth: Int) {
-            guard depth < 24 else { return }
-            if let dictionary = value as? [String: Any] {
-                for child in dictionary.values { visit(child, depth: depth + 1) }
-            } else if let array = value as? [Any] {
-                for child in array { visit(child, depth: depth + 1) }
-            } else if let data = value as? Data,
-                      let child = try? PropertyListSerialization.propertyList(from: data, format: nil) {
-                visit(child, depth: depth + 1)
-            } else if let string = value as? String, let url = URL(string: string), url.isFileURL,
-                      url.host == nil || url.host == "" || url.host == "localhost" {
-                urls.insert(url.resolvingSymlinksInPath().standardizedFileURL)
-            }
-        }
-        visit(value, depth: 0)
-        return urls.sorted { $0.path < $1.path }
-    }
-
-    private static func aerialNames() -> [String: String] {
-        let catalogs = [aerialRoot.appendingPathComponent("entries.json"),
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials/manifest/entries.json")]
-        var names: [String: String] = [:]
-        for url in catalogs {
-            guard let data = try? Data(contentsOf: url),
-                  let catalog = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let assets = catalog["assets"] as? [[String: Any]] else { continue }
-            for asset in assets {
-                if let id = asset["id"] as? String, let label = asset["accessibilityLabel"] as? String { names[id] = label }
-            }
-        }
-        return names
     }
 
     static func image(at url: URL, maxPixels: Int) throws -> CGImage {

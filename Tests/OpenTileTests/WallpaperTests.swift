@@ -24,22 +24,26 @@ struct WallpaperTests {
         #expect(WallpaperLibrary.scan(roots: [(root, "Downloads")], cancelled: { true }).isEmpty)
     }
 
-    @Test func settingsDiscoveryReadsNestedConfigurationsAndRejectsRemoteURLs() throws {
-        let nested = try PropertyListSerialization.data(fromPropertyList: ["url": ["relative": "file:///tmp/My%20Wallpaper.jpg"]], format: .binary, options: 0)
-        let data = try PropertyListSerialization.data(fromPropertyList: ["Choices": [["Configuration": nested], ["Files": ["file:///tmp/My%20Wallpaper.jpg", "https://example.com/photo.jpg", "file://server/share/image.jpg"]]]], format: .binary, options: 0)
-        #expect(WallpaperLibrary.settingsFiles(data: data) == [URL(fileURLWithPath: "/tmp/My Wallpaper.jpg")])
-        #expect(WallpaperLibrary.settingsFiles(data: Data("invalid".utf8)).isEmpty)
+    @Test func wallpaperFolderIsCreatedAndPreservesExistingFiles() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = try WallpaperLibrary.ensureFolder(home: home)
+        #expect(folder.path == home.appendingPathComponent("Pictures/Wallpapers").path)
+        let photo = folder.appendingPathComponent("Keep.png")
+        try Data("original".utf8).write(to: photo)
+        try WallpaperLibrary.ensureFolder(home: home)
+        #expect(try Data(contentsOf: photo) == Data("original".utf8))
+        let outside = home.appendingPathComponent("Outside.jpg")
+        try Data().write(to: outside)
+        #expect(WallpaperLibrary.scan(roots: [(folder, "Wallpapers")]).map(\.url) == [photo.resolvingSymlinksInPath()])
     }
 
-    @Test func wallpaperScanAcceptsSettingsFileReferencesAndDeduplicatesFolders() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let photo = root.appendingPathComponent("Photo.png")
-        try Data().write(to: photo)
-        let entries = WallpaperLibrary.scan(roots: [(photo, "macOS Settings"), (root, "Downloads"), (root.appendingPathComponent("missing.jpg"), "Missing")])
-        #expect(entries.count == 1)
-        #expect(entries.first?.source == "macOS Settings")
+    @Test func wallpaperFolderReportsConflictingFile() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("Pictures"), withIntermediateDirectories: true)
+        try Data().write(to: WallpaperLibrary.folder(home: home))
+        #expect(throws: (any Error).self) { try WallpaperLibrary.ensureFolder(home: home) }
     }
 
     @Test func wallpaperDecodeReportsUnreadableFile() {

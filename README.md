@@ -68,13 +68,12 @@ For app symbols, choose **Draw to Open App → Teach an App Symbol** and save th
 
 ## Wallpapers
 
-Press **Control–Option–W**, or choose **Choose Wallpaper…** from the menu bar. Type a name or source to filter, use the arrow keys to select, and press Return to apply to every connected display’s current desktop. Escape clears the search, then closes the picker. **Command–O** opens a file/folder browser; added folders are remembered. This works while gestures are paused.
+Press **Control–Option–W**, or choose **Choose Wallpaper…** from the menu bar. Type a name or source to filter, use the arrow keys to select, and press Return to apply to every connected display’s current desktop. Escape clears the search, then closes the picker. **Command–O** opens the Wallpapers folder in Finder. Add files there, then reopen the picker to refresh. This works while gestures are paused.
 
-The picker includes images from Downloads, Pictures/Wallpapers, local macOS desktop pictures, and downloaded Apple aerials. Aerial videos become persistent still images in `~/Library/Application Support/OpenTile/Wallpaper Stills`. It does not download Apple assets or provide live video wallpapers.
+The picker creates and reads **`~/Pictures/Wallpapers`**, including its subfolders. Put your wallpaper images or videos there. Videos become persistent still images in `~/Library/Application Support/OpenTile/Wallpaper Stills`. It does not download Apple assets or provide live video wallpapers.
 
 The slanted carousel and 420 ms center-out diagonal reveal follow [Omarchy’s wallpaper interface](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Reduce Motion skips transitions. Wallpaper changes use native macOS APIs without Screen Recording permission.
 
-Local image references saved in macOS Wallpaper settings also appear in the picker, even when stored outside Downloads. Discovery reads the Settings store without changing it and supports downloaded aerials in both system and user libraries. The Settings store is a best-effort source: Apple's generated wallpapers, Photos-library-only items, and cloud-only catalog previews are not exported as ordinary image files. Use **⌘O** to add a local image if it is missing.
 
 ## Configuration
 
@@ -102,7 +101,7 @@ CI does not exercise physical trackpad input, real macOS permission dialogs, or 
 
 ## Preparing public releases
 
-The current v0.4.0 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
+The current v0.4.1 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
 
 ```sh
 OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \

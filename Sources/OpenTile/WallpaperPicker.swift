@@ -1,6 +1,5 @@
 import AppKit
 import Carbon
-import UniformTypeIdentifiers
 
 @MainActor final class WallpaperPicker: NSObject, NSSearchFieldDelegate, NSWindowDelegate {
     private var panel: WallpaperPanel?
@@ -12,7 +11,6 @@ import UniformTypeIdentifiers
     private var entries: [WallpaperEntry] = []
     private var filtered: [WallpaperEntry] = []
     private var selected = 0
-    private var browsing = false
     private var applying = false
     private var generation = 0
     private var scanTask: Task<[WallpaperEntry], Never>?
@@ -88,7 +86,7 @@ import UniformTypeIdentifiers
         hint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         hint.textColor = NSColor(white: 0.75, alpha: 1)
         content.addSubview(hint)
-        let browse = NSButton(title: "Browse Files or Folder…  ⌘O", target: self, action: #selector(browse))
+        let browse = NSButton(title: "Open Wallpapers Folder  ⌘O", target: self, action: #selector(browse))
         browse.isBordered = false
         browse.attributedTitle = NSAttributedString(string: browse.title, attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 13, weight: .medium)])
         browse.frame = CGRect(x: (width - 260) / 2, y: height * 0.30 - 174, width: 260, height: 28)
@@ -111,10 +109,14 @@ import UniformTypeIdentifiers
         filtered = []
         carousel?.display(entries: [], selected: 0, image: { _ in nil }, select: { _ in })
         caption.stringValue = "Looking for local wallpapers…"
-        hint.stringValue = "Downloads · Pictures/Wallpapers · macOS · your folders"
-        let extra = (UserDefaults.standard.stringArray(forKey: "wallpaperFolders") ?? []).map { URL(fileURLWithPath: $0) }
+        hint.stringValue = "~/Pictures/Wallpapers · includes subfolders"
+        do { try WallpaperLibrary.ensureFolder() }
+        catch {
+            caption.stringValue = "Cannot open Wallpapers folder: \(error.localizedDescription)"
+            return
+        }
         let task = Task.detached(priority: .userInitiated) {
-            WallpaperLibrary.scan(roots: WallpaperLibrary.roots(additional: extra), cancelled: { Task.isCancelled })
+            WallpaperLibrary.scan(roots: [(WallpaperLibrary.folder(), "Wallpapers")], cancelled: { Task.isCancelled })
         }
         scanTask = task
         Task { [weak self] in
@@ -148,7 +150,7 @@ import UniformTypeIdentifiers
             caption.stringValue = "\(entry.name)  ·  \(entry.source)\(entry.isVideo ? " · still frame" : "")"
             hint.stringValue = "\(selected + 1)/\(filtered.count)   ← → select   Return apply to all displays   Esc close"
         } else {
-            caption.stringValue = entries.isEmpty ? "No local wallpapers found — browse a file or folder" : "No matching wallpapers"
+            caption.stringValue = entries.isEmpty ? "Add images to ~/Pictures/Wallpapers, then reopen the picker" : "No matching wallpapers"
             hint.stringValue = "Type a name or source · Esc clears search · ⌘O browse"
         }
     }
@@ -193,36 +195,13 @@ import UniformTypeIdentifiers
     }
 
     @objc private func browse() {
-        guard let panel, !browsing, !applying else { return }
-        browsing = true
-        let chooser = NSOpenPanel()
-        chooser.canChooseDirectories = true
-        chooser.canChooseFiles = true
-        chooser.allowsMultipleSelection = false
-        chooser.allowedContentTypes = [.image, .movie]
-        chooser.prompt = "Choose"
-        chooser.beginSheetModal(for: panel) { [weak self] response in
-            guard let self else { return }
-            self.browsing = false
-            guard response == .OK, let url = chooser.url else { return }
-            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                var folders = UserDefaults.standard.stringArray(forKey: "wallpaperFolders") ?? []
-                if !folders.contains(url.path) { folders.append(url.path) }
-                UserDefaults.standard.set(folders, forKey: "wallpaperFolders")
-                self.load()
-            } else {
-                self.generation += 1
-                self.scanTask?.cancel()
-                self.thumbnailQueue.cancelAllOperations()
-                self.pending.removeAll()
-                let entry = WallpaperEntry(url: url, name: url.deletingPathExtension().lastPathComponent, source: "Selected file")
-                if !self.entries.contains(where: { $0.url == url }) { self.entries.insert(entry, at: 0) }
-                self.search.stringValue = ""
-                self.filtered = self.entries
-                self.selected = self.filtered.firstIndex(where: { $0.url == url }) ?? 0
-                self.render()
-            }
-            panel.makeFirstResponder(self.search)
+        guard !applying else { return }
+        do {
+            let folder = try WallpaperLibrary.ensureFolder()
+            if NSWorkspace.shared.open(folder) { dismiss() }
+            else { caption.stringValue = "Could not open Wallpapers folder in Finder" }
+        } catch {
+            caption.stringValue = "Cannot open Wallpapers folder: \(error.localizedDescription)"
         }
     }
 
@@ -254,7 +233,7 @@ import UniformTypeIdentifiers
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        if !browsing && !applying { dismiss() }
+        if !applying { dismiss() }
     }
 
     private func dismiss(cancelApply: Bool = true) {
