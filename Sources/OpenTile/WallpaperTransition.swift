@@ -5,8 +5,8 @@ import QuartzCore
 enum WallpaperReveal {
     static let duration = 0.420
     static func path(size: CGSize, progress: Double) -> CGPath {
-        let slant = -0.18
-        let spread = (size.width / 2 + abs(slant) * size.height / 2 + 4) * min(1, max(0, progress))
+        let slant: CGFloat = -0.18
+        let spread = (size.width / 2 + abs(slant) * size.height / 2 + 4) * CGFloat(min(1, max(0, progress)))
         let top = size.width / 2 - slant * size.height / 2
         let bottom = size.width / 2 + slant * size.height / 2
         let path = CGMutablePath()
