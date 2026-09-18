@@ -1,0 +1,17 @@
+Nami One Piece — Dravenk (@dravenk3d)
+https://sketchfab.com/3d-models/nami-one-piece-b79d5bba286b42eaa9e3f044c48701a8
+Licensed under Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+
+USDZ model supplied by the user. OpenTile applies runtime scaling, lighting,
+and whole-model motion. The bundled model itself is unchanged.
+
+Nami2D.png: AI-generated 2D adaptation of the supplied model reference, created
+with the built-in image generation tool. Orange hair, cream patterned wrap
+clothing, bow, and a seated pose. OpenTile adds native mesh deformation for
+hair, bow, sash, breathing, and eye compression. This is not a Live2D export.
+
+NamiRig.png: AI-generated separated sprite adaptation of Nami2D.png, with
+head, clothed torso/arms, seated legs, rear hair, and two foreground locks.
+OpenTile assembles these layers with native neck/waist joints and spring-driven
+hair deformation. This is not a Live2D/Cubism export.

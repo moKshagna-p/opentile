@@ -10,6 +10,7 @@ let package = Package(
         .target(name: "OpenTileCore"),
         .target(name: "OpenTileC", publicHeadersPath: "include"),
         .executableTarget(name: "OpenTile", dependencies: [.product(name: "AppBundle", package: "AeroSpace"), "OpenTileCore", "OpenTileC", .product(name: "Sparkle", package: "Sparkle")],
+            resources: [.copy("Resources/Companion")],
             linkerSettings: [.unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "MultitouchSupport", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "OpenTileCoreTests", dependencies: ["OpenTileCore"]),
         .testTarget(name: "OpenTileTests", dependencies: ["OpenTile", .product(name: "AppBundle", package: "AeroSpace"), .product(name: "Common", package: "AeroSpace")])

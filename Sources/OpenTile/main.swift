@@ -49,6 +49,7 @@ final class Outline {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var appUpdater = AppUpdater()
+    @MainActor private lazy var companion = DesktopCompanion()
     @MainActor private lazy var permissions = PermissionSetup()
     @MainActor private lazy var wallpaperPicker = WallpaperPicker()
     private let bridge = TouchBridge()
@@ -140,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wallpaperPicker.onStatus = { [weak self] in self?.status($0) }
         wallpaperPicker.install(in: menu)
         appDrawing.install(in: menu)
+        companion.install(in: menu)
         appDrawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }
         appDrawing.onStatus = { [weak self] message in self?.status(message) }
         drawing.install(in: menu)
@@ -499,6 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func applicationWillTerminate(_ notification: Notification) {
         wallpaperPicker.stop()
+        companion.stop()
         stopOpenTileEngine()
         bridge.stop()
         polling.stop()
