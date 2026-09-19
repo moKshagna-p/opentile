@@ -102,7 +102,7 @@ CI does not exercise physical trackpad input, real macOS permission dialogs, or 
 
 ## Preparing public releases
 
-The current v0.4.2 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
+The current v0.5.0 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
 
 ```sh
 OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
@@ -116,3 +116,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout, development ch
 ## Status
 
 Experimental. Trackpad input uses Apple’s private `MultitouchSupport` framework and has been verified on Apple Silicon. Native trackpad gestures may also respond. Tile movement works within the current workspace, and AeroSpace determines the final window sizes and positions.
+
+### Split menu bar
+
+Enable **Enable Split Menu Bar** from OpenTile's menu for a top-edge bar on each
+screen. Workspaces and full-color icons for their open apps sit to the left of
+the camera notch; Wi-Fi/network, sound,
+battery (when present), clock, and OpenTile controls sit on the right. On screens
+without a notch, a small center gap separates the two halves. Scroll the workspace
+strip when its buttons exceed the available space.
+
+Set the native macOS menu bar to **automatically hide** in System Settings first;
+OpenTile does not change that system preference. The native menu remains
+accessible at the top edge. Tiled windows reserve space for the bar, and the bar
+hides for engine fullscreen workspaces. Panels do not join native fullscreen
+spaces. Disable the toggle to restore the original tiling space. Status controls
+open the corresponding system settings; workspace buttons use the normal
+OpenTile switching queue and continue working with gestures paused.

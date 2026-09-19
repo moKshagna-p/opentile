@@ -6,6 +6,7 @@ public final class TrayMenuModel: ObservableObject {
 
     private init() {}
 
+    @Published public internal(set) var openTileBar: OpenTileBarState? = nil
     @Published public internal(set) var trayText: String = ""
     @Published var trayItems: [TrayItem] = []
     /// Is "layouting" enabled
@@ -24,6 +25,8 @@ enum AxPermissionStatus: Equatable {
 }
 
 @MainActor func updateTrayText() {
+    let bar = openTileBarState()
+    if TrayMenuModel.shared.openTileBar != bar { TrayMenuModel.shared.openTileBar = bar }
     let sortedMonitors = sortedMonitors
     let focus = focus
     TrayMenuModel.shared.trayText = (activeMode?.takeIf { $0 != mainModeId }?.first.map { "(\($0.uppercased())) " } ?? "") +

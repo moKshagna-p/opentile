@@ -49,6 +49,7 @@ final class Outline {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var appUpdater = AppUpdater()
+    @MainActor private lazy var splitMenuBar = SplitMenuBar()
     @MainActor private lazy var companion = DesktopCompanion()
     @MainActor private lazy var permissions = PermissionSetup()
     @MainActor private lazy var wallpaperPicker = WallpaperPicker()
@@ -162,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let quit = menu.addItem(withTitle: "Quit OpenTile", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         item.menu = menu
+        splitMenuBar.selectWorkspace = { [weak self] in self?.switchWorkspace($0) }
+        splitMenuBar.install(in: menu)
         globalKeys = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             if event.type == .flagsChanged { self?.wakeGestureProcessing() }
             if event.type == .keyDown && event.keyCode == 53 { self?.cancel() }
@@ -501,6 +504,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func applicationWillTerminate(_ notification: Notification) {
         wallpaperPicker.stop()
+        splitMenuBar.stop()
         companion.stop()
         stopOpenTileEngine()
         bridge.stop()
