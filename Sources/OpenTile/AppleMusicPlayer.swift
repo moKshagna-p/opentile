@@ -141,24 +141,50 @@ struct MusicTrack {
         toggle.contentTintColor = .white
         addSubview(cover); addSubview(toggle)
         let controller = NSViewController()
-        controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 340))
-        largeCover.frame = NSRect(x: 40, y: 120, width: 200, height: 200)
+        let surface = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 296, height: 400))
+        surface.material = .popover
+        surface.blendingMode = .behindWindow
+        surface.state = .active
+        controller.view = surface
+
+        let heading = NSTextField(labelWithString: "APPLE MUSIC")
+        heading.frame = NSRect(x: 24, y: 366, width: 248, height: 16)
+        heading.font = .systemFont(ofSize: 10, weight: .semibold)
+        heading.textColor = .secondaryLabelColor
+        surface.addSubview(heading)
+
+        largeCover.frame = NSRect(x: 42, y: 138, width: 212, height: 212)
         largeCover.imageScaling = .scaleProportionallyUpOrDown
-        titleLabel.frame = NSRect(x: 20, y: 86, width: 240, height: 22)
+        largeCover.wantsLayer = true
+        largeCover.layer?.cornerRadius = 10
+        largeCover.layer?.masksToBounds = true
+        largeCover.setAccessibilityLabel("Album artwork")
+        titleLabel.frame = NSRect(x: 24, y: 106, width: 248, height: 22)
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.alignment = .center
         titleLabel.lineBreakMode = .byTruncatingTail
-        artistLabel.frame = NSRect(x: 20, y: 44, width: 240, height: 40)
-        artistLabel.font = .systemFont(ofSize: 11)
-        for view in [largeCover, titleLabel, artistLabel] { controller.view.addSubview(view) }
+        artistLabel.frame = NSRect(x: 24, y: 66, width: 248, height: 36)
+        artistLabel.font = .systemFont(ofSize: 12)
+        artistLabel.textColor = .secondaryLabelColor
+        artistLabel.alignment = .center
+        for view in [largeCover, titleLabel, artistLabel] { surface.addSubview(view) }
         for (index, symbol) in ["backward.end.fill", "play.fill", "forward.end.fill"].enumerated() {
-            let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: ["Previous track", "Play or pause", "Next track"][index])!, target: self, action: [#selector(previous), #selector(playPause), #selector(next)][index])
-            b.frame = NSRect(x: 76 + index * 44, y: 8, width: 40, height: 30)
+            let label = ["Previous track", "Play or pause", "Next track"][index]
+            let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: self, action: [#selector(previous), #selector(playPause), #selector(next)][index])
+            b.frame = NSRect(x: 64 + index * 60, y: 16, width: 48, height: 40)
+            b.bezelStyle = .regularSquare
             b.isBordered = false
-            controller.view.addSubview(b)
+            b.contentTintColor = .labelColor
+            b.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: index == 1 ? 23 : 17, weight: .semibold)
+            b.toolTip = label
+            b.setAccessibilityLabel(label)
+            surface.addSubview(b)
             controls.append(b)
         }
         popover.contentViewController = controller
         popover.behavior = .transient
+        popover.animates = true
         subscription = player.$track.combineLatest(player.$busy).sink { [weak self] track, busy in
             self?.update(track, busy: busy)
         }
@@ -197,6 +223,12 @@ struct MusicTrack {
         let symbol = track.playing ? "pause.fill" : "play.fill"
         toggle.image = NSImage(systemSymbolName: symbol, accessibilityDescription: track.playing ? "Pause" : "Play")
         controls[1].image = toggle.image
+        let playbackLabel = track.playing ? "Pause" : "Play"
+        toggle.setAccessibilityLabel(playbackLabel)
+        controls[1].setAccessibilityLabel(playbackLabel)
+        controls[1].toolTip = playbackLabel
+        titleLabel.toolTip = track.title
+        artistLabel.toolTip = track.artist
         toggle.isEnabled = track.available && !busy
         controls.forEach { $0.isEnabled = track.available && !busy }
     }
