@@ -417,7 +417,10 @@ final class WorkspaceBarButton: NSButton {
             trafficButton.setAccessibilityLabel(trafficText)
             trafficButtons.append(trafficButton)
             modules.append(trafficButton)
-            modules.append(button(sound, symbol: muted != 0 ? "speaker.slash" : "speaker.wave.2", action: #selector(soundSettings)))
+            let soundButton = button("", symbol: muted != 0 ? "speaker.slash" : "speaker.wave.2", action: #selector(soundSettings))
+            soundButton.toolTip = sound
+            soundButton.setAccessibilityLabel("Sound: \(sound)")
+            modules.append(soundButton)
             if let battery {
                 let batteryButton = button(battery, action: #selector(batterySettings))
                 batteryButton.image = BatteryIndicator.image(fraction: batteryFraction)
@@ -440,8 +443,8 @@ final class WorkspaceBarButton: NSButton {
                 view.addSubview(b)
             }
             if musicItem?.state == .on, x >= 68 {
-                let musicView = existingMusic ?? MusicBarView(player: music, width: min(240, x - 16))
-                musicView.resize(to: min(240, x - 16))
+                let musicView = existingMusic ?? MusicBarView(player: music, width: min(52, x - 16))
+                musicView.resize(to: min(52, x - 16))
                 if musicView.superview == nil { view.addSubview(musicView) }
             }
             if musicItem?.state != .on || x < 68 { existingMusic?.removeFromSuperview() }

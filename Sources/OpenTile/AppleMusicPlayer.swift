@@ -173,7 +173,7 @@ struct MusicTrack {
         super.init(frame: NSRect(x: 8, y: 3, width: width, height: 22))
         cover.frame = NSRect(x: 0, y: 0, width: max(24, width - 28), height: 22)
         cover.isBordered = false
-        cover.imagePosition = .imageLeading
+        cover.imagePosition = .imageOnly
         cover.imageScaling = .scaleProportionallyDown
         cover.font = .systemFont(ofSize: 11, weight: .medium)
         cover.lineBreakMode = .byTruncatingTail
@@ -185,38 +185,38 @@ struct MusicTrack {
         toggle.contentTintColor = .white
         addSubview(cover); addSubview(toggle)
         let controller = NSViewController()
-        let surface = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 296, height: 400))
+        let surface = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 280, height: 172))
         surface.material = .popover
         surface.blendingMode = .behindWindow
         surface.state = .active
         controller.view = surface
 
         let heading = NSTextField(labelWithString: "APPLE MUSIC")
-        heading.frame = NSRect(x: 24, y: 366, width: 248, height: 16)
+        heading.frame = NSRect(x: 104, y: 138, width: 156, height: 14)
         heading.font = .systemFont(ofSize: 10, weight: .semibold)
         heading.textColor = .secondaryLabelColor
         surface.addSubview(heading)
 
-        largeCover.frame = NSRect(x: 42, y: 138, width: 212, height: 212)
+        largeCover.frame = NSRect(x: 16, y: 76, width: 72, height: 72)
         largeCover.imageScaling = .scaleProportionallyUpOrDown
         largeCover.wantsLayer = true
         largeCover.layer?.cornerRadius = 10
         largeCover.layer?.masksToBounds = true
         largeCover.setAccessibilityLabel("Album artwork")
-        titleLabel.frame = NSRect(x: 24, y: 106, width: 248, height: 22)
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.frame = NSRect(x: 104, y: 111, width: 160, height: 22)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .labelColor
-        titleLabel.alignment = .center
+        titleLabel.alignment = .left
         titleLabel.lineBreakMode = .byTruncatingTail
-        artistLabel.frame = NSRect(x: 24, y: 66, width: 248, height: 36)
+        artistLabel.frame = NSRect(x: 104, y: 74, width: 160, height: 34)
         artistLabel.font = .systemFont(ofSize: 12)
         artistLabel.textColor = .secondaryLabelColor
-        artistLabel.alignment = .center
+        artistLabel.alignment = .left
         for view in [largeCover, titleLabel, artistLabel] { surface.addSubview(view) }
         for (index, symbol) in ["backward.end.fill", "play.fill", "forward.end.fill"].enumerated() {
             let label = ["Previous track", "Play or pause", "Next track"][index]
             let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: self, action: [#selector(previous), #selector(playPause), #selector(next)][index])
-            b.frame = NSRect(x: 64 + index * 60, y: 16, width: 48, height: 40)
+            b.frame = NSRect(x: 56 + index * 60, y: 14, width: 48, height: 40)
             b.bezelStyle = .regularSquare
             b.isBordered = false
             b.contentTintColor = .labelColor
@@ -259,7 +259,7 @@ struct MusicTrack {
             thumbnail.unlockFocus()
             cover.image = thumbnail
         }
-        cover.title = "  " + track.title
+        cover.title = ""
         cover.toolTip = track.title + " — " + track.artist
         cover.setAccessibilityLabel(cover.toolTip)
         titleLabel.stringValue = track.title
