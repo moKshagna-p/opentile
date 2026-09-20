@@ -58,6 +58,7 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleURLSchemes</key><array><string>opentile</string></array>
 </dict></array>
 <key>LSUIElement</key><true/>
+<key>NSAppleEventsUsageDescription</key><string>OpenTile displays Apple Music track information and album artwork and lets you control playback.</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>SUFeedURL</key><string>https://github.com/moKshagna-p/opentile/releases/latest/download/appcast.xml</string>
 <key>SUEnableAutomaticChecks</key><true/>
