@@ -102,7 +102,7 @@ CI does not exercise physical trackpad input, real macOS permission dialogs, or 
 
 ## Preparing public releases
 
-The current v0.6.0 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
+The current v0.6.1 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
 
 ```sh
 OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
@@ -120,13 +120,25 @@ Experimental. Trackpad input uses Apple’s private `MultitouchSupport` framewor
 ### Split menu bar
 
 Enable **Enable Split Menu Bar** from OpenTile's menu for a top-edge bar on each
-screen. Workspaces and full-color icons for their open apps sit to the left of
+screen. Occupied workspaces and the active workspace appear dynamically, with
+full-color icons for their open apps to the left of
 the camera notch; Wi-Fi/network, live download (↓) and upload (↑) rates, sound,
 battery (when present), clock, and OpenTile controls sit on the right. Network
 rates show bytes per second across Wi-Fi and Ethernet, refreshed once per second.
 The battery icon fills proportionally to its charge. On screens
 without a notch, a small center gap separates the two halves. Scroll the workspace
 strip when its buttons exceed the available space.
+
+The left bar also shows compact CodexBar usage meters without a persistent
+highlight. Claude is hidden from the navbar; enabled providers remain available
+in the details popover. Sound uses an icon with its volume in the tooltip. Install and configure
+[CodexBar](https://github.com/steipete/CodexBar) to enable providers; OpenTile uses
+its bundled `dashboard` command and follows its used/remaining preference.
+Click the meters for provider limits and reset times. They collapse to an icon
+when workspaces need more room. Usage refreshes every three minutes while the
+bar is enabled, pauses during sleep, and retains the last reading with an
+unavailable notice if a refresh fails. This requires a CodexBar version with the
+`dashboard` command; OpenTile does not import native macOS status items.
 
 Set the native macOS menu bar to **automatically hide** in System Settings first;
 OpenTile does not change that system preference. The native menu remains
@@ -136,9 +148,9 @@ spaces. Disable the toggle to restore the original tiling space. Status controls
 open the corresponding system settings; workspace buttons use the normal
 OpenTile switching queue and continue working with gestures paused.
 
-Enable **Show Apple Music Player** in OpenTile’s menu to add album artwork, the
-current track, and play/pause to the right bar when space allows. Click the artwork
-for a larger cover and previous/next controls. Open Music and play a song first;
+Enable **Show Apple Music Player** in OpenTile’s menu to add a compact album-art
+and play/pause control to the right bar when space allows. Hover for the current
+track, or click the artwork for a compact card with song details and previous/next controls. Open Music and play a song first;
 macOS will ask to allow OpenTile to control Music. If denied, enable OpenTile →
 Music in **Privacy & Security → Automation**. Missing artwork uses a music icon.
 The player uses playback notifications rather than a polling timer. If Music

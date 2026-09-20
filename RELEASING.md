@@ -1,8 +1,14 @@
 # Releasing OpenTile
 
+## Version sequence
+
+Increment the patch version through `.6`, then increment the minor version and
+reset the patch to zero: `0.6.1` → … → `0.6.6` → `0.7.0`. Increase the build
+number for every release, including minor-version transitions.
+
 ## Signing status
 
-The existing v0.6.0 release uses Apple Development signing and is not notarized.
+The current v0.6.1 release uses Apple Development signing and is not notarized.
 This distribution mode may require users to grant permissions again after updates.
 Do not describe it as Developer ID signed or notarized.
 
