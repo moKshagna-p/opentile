@@ -32,6 +32,27 @@ struct CodexBarSnapshot: Decodable {
     }
 }
 
+/// The navbar always displays remaining capacity, independent of CodexBar's detail preference.
+struct CodexBarRemainingUsage {
+    let percent: Double?
+
+    init(window: CodexBarSnapshot.Window?) {
+        percent = window?.percent(showUsed: false)
+    }
+
+    func ringPath(center: CGPoint, radius: CGFloat) -> NSBezierPath {
+        guard let percent, percent > 0 else { return NSBezierPath() }
+        if percent == 100 {
+            return NSBezierPath(ovalIn: CGRect(x: center.x - radius, y: center.y - radius,
+                                              width: radius * 2, height: radius * 2))
+        }
+        let path = NSBezierPath()
+        path.appendArc(withCenter: center, radius: radius, startAngle: 90,
+                       endAngle: 90 - CGFloat(percent) * 3.6, clockwise: true)
+        return path
+    }
+}
+
 /// Runs CodexBar's supported adapter off the UI thread; one request at a time.
 @MainActor final class CodexBarStatus {
     private(set) var snapshot: CodexBarSnapshot?
@@ -138,7 +159,7 @@ struct WorkspaceBarLayout {
         super.viewWillMove(toWindow: newWindow)
     }
     func update() {
-        toolTip = status.message.isEmpty ? "CodexBar · \(status.snapshot?.showUsed == true ? "Used" : "Remaining") usage — click for details" : status.message
+        toolTip = status.message.isEmpty ? "CodexBar · Remaining usage — click for details" : status.message
         needsDisplay = true
         if popover?.isShown == true { popover?.contentViewController = detailController() }
     }
@@ -158,17 +179,16 @@ struct WorkspaceBarLayout {
         for (index, provider) in providers.prefix(count).enumerated() {
             let x = CGFloat(index) * cellWidth + 9
             let color = provider.id == "claude" ? NSColor.systemOrange : NSColor.systemMint
-            let percent = provider.windows?.first?.percent(showUsed: status.snapshot?.showUsed == true)
+            let usage = CodexBarRemainingUsage(window: provider.windows?.first)
+            let percent = usage.percent
             let ring = NSBezierPath(ovalIn: CGRect(x: x, y: 5, width: 12, height: 12))
             ring.lineWidth = 2
             NSColor.white.withAlphaComponent(0.14).setStroke()
             ring.stroke()
             if let percent, percent > 0 {
-                let arc = NSBezierPath()
-                arc.appendArc(withCenter: CGPoint(x: x + 6, y: 11), radius: 6,
-                              startAngle: 90, endAngle: 90 - CGFloat(percent) * 3.6, clockwise: true)
+                let arc = usage.ringPath(center: CGPoint(x: x + 6, y: 11), radius: 6)
                 arc.lineWidth = 2
-                arc.lineCapStyle = .round
+                arc.lineCapStyle = .butt
                 color.withAlphaComponent(status.message.isEmpty ? 1 : 0.4).setStroke()
                 arc.stroke()
             }

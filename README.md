@@ -133,7 +133,8 @@ The left bar also shows compact CodexBar usage meters without a persistent
 highlight. Claude is hidden from the navbar; enabled providers remain available
 in the details popover. Sound uses an icon with its volume in the tooltip. Install and configure
 [CodexBar](https://github.com/steipete/CodexBar) to enable providers; OpenTile uses
-its bundled `dashboard` command and follows its used/remaining preference.
+its bundled `dashboard` command. The navbar ring and number always show the
+remaining percentage; the detail popover follows CodexBar’s used/remaining preference.
 Click the meters for provider limits and reset times. They collapse to an icon
 when workspaces need more room. Usage refreshes every three minutes while the
 bar is enabled, pauses during sleep, and retains the last reading with an
