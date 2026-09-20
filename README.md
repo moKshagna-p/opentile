@@ -141,4 +141,8 @@ current track, and play/pause to the right bar when space allows. Click the artw
 for a larger cover and previous/next controls. Open Music and play a song first;
 macOS will ask to allow OpenTile to control Music. If denied, enable OpenTile →
 Music in **Privacy & Security → Automation**. Missing artwork uses a music icon.
-The player uses playback notifications rather than a polling timer.
+The player uses playback notifications rather than a polling timer. If Music
+does not provide artwork immediately, OpenTile retries three times and keeps any
+cover already loaded for that song. If artwork is still missing, it sends the
+song title, artist, and album to Apple’s iTunes catalog to find an exact match.
+Songs without matching artwork keep the music icon.

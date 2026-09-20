@@ -7,6 +7,8 @@ struct MusicTrack {
     var playing = false
     var artwork: Data?
     var available = false
+    var album = ""
+    var identity: [String] { [title, artist, album] }
 
     static func decode(_ result: NSAppleEventDescriptor) -> MusicTrack {
         guard result.numberOfItems >= 4 else { return MusicTrack() }
@@ -14,7 +16,8 @@ struct MusicTrack {
                           artist: result.atIndex(2)?.stringValue ?? "",
                           playing: result.atIndex(3)?.booleanValue ?? false,
                           artwork: result.atIndex(4).flatMap { $0.data.isEmpty ? nil : $0.data },
-                          available: true)
+                          available: true,
+                          album: result.atIndex(5)?.stringValue ?? "")
     }
 }
 
@@ -27,6 +30,8 @@ struct MusicTrack {
     private var running = false
     private var generation = 0
     private var pending = false
+    private var artworkState = MusicArtworkState()
+    private var artworkTask: Task<Void, Never>?
 
     func start() {
         guard !running else { return }
@@ -52,6 +57,9 @@ struct MusicTrack {
         pending = false
         tokens.forEach { $0.0.removeObserver($0.1) }
         tokens.removeAll()
+        artworkTask?.cancel()
+        artworkTask = nil
+        artworkState = MusicArtworkState()
         track = MusicTrack()
     }
 
@@ -63,7 +71,7 @@ struct MusicTrack {
         guard running else { return }
         guard !busy else { if command == nil { pending = true }; return }
         guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty == false else {
-            track = MusicTrack()
+            accept(MusicTrack())
             return
         }
         busy = true
@@ -83,10 +91,41 @@ struct MusicTrack {
                 guard let self else { return }
                 self.busy = false
                 guard self.running else { return }
-                if self.generation == version { self.track = value }
+                if self.generation == version { self.accept(value) }
                 if self.pending || self.generation != version {
                     self.pending = false
                     self.refresh()
+                }
+            }
+        }
+    }
+
+    private func accept(_ value: MusicTrack) {
+        let changed = track.identity != value.identity || track.available != value.available
+        if changed || value.artwork.flatMap(NSImage.init(data:)) != nil {
+            artworkTask?.cancel()
+            artworkTask = nil
+        }
+        track = artworkState.accept(value)
+        guard track.available, track.artwork == nil, artworkTask == nil else { return }
+        let expected = track.identity
+        if let delay = artworkState.nextRetryDelay() {
+            artworkTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled, let self, self.running, self.track.identity == expected else { return }
+                self.artworkTask = nil
+                self.refresh()
+            }
+        } else if artworkState.beginCatalogLookup() {
+            let snapshot = track
+            artworkTask = Task { [weak self] in
+                let data = await MusicArtworkCatalog.fetch(for: snapshot)
+                guard !Task.isCancelled, let self, self.running, self.track.identity == expected else { return }
+                self.artworkTask = nil
+                if let data {
+                    var updated = self.track
+                    updated.artwork = data
+                    self.track = self.artworkState.accept(updated)
                 }
             }
         }
@@ -104,7 +143,12 @@ struct MusicTrack {
                 try
                     set cover to raw data of artwork 1 of t
                 end try
-                return {name of t, artist of t, player state is playing, cover}
+                if cover is "" then
+                    try
+                        set cover to data of artwork 1 of t
+                    end try
+                end if
+                return {name of t, artist of t, player state is playing, cover, album of t}
             end tell
         end timeout
         """

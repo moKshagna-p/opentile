@@ -17,11 +17,13 @@ struct AppleMusicPlayerTests {
         result.insert(NSAppleEventDescriptor(boolean: true), at: 3)
         let bytes = Data([137, 80, 78, 71])
         result.insert(NSAppleEventDescriptor(descriptorType: 0x504e4766, data: bytes)!, at: 4)
+        result.insert(NSAppleEventDescriptor(string: "An Album"), at: 5)
         let track = MusicTrack.decode(result)
         #expect(track.available)
         #expect(track.playing)
         #expect(track.title == "A Song")
         #expect(track.artist == "An Artist")
+        #expect(track.album == "An Album")
         #expect(track.artwork == bytes)
         result.insert(NSAppleEventDescriptor(string: ""), at: 4)
         // A missing artwork payload must not prevent displaying the track.
