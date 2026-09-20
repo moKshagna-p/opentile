@@ -2,7 +2,7 @@
 
 ## Signing status
 
-The existing v0.5.0 release uses Apple Development signing and is not notarized.
+The existing v0.6.0 release uses Apple Development signing and is not notarized.
 This distribution mode may require users to grant permissions again after updates.
 Do not describe it as Developer ID signed or notarized.
 
