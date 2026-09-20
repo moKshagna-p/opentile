@@ -63,6 +63,8 @@ final class WorkspaceBarButton: NSButton {
 @MainActor final class SplitMenuBar: NSObject {
     private let key = "splitMenuBarEnabled"
     private let music = AppleMusicPlayer()
+    private let codexBar = CodexBarStatus()
+    private var codexButtons: [CodexBarButton] = []
     private var musicItem: NSMenuItem?
     private var panels: [(left: BarPanel, right: BarPanel)] = []
     private var subscription: AnyCancellable?
@@ -205,7 +207,9 @@ final class WorkspaceBarButton: NSButton {
 
     private func renderWorkspaces() {
         guard running else { return }
-        let workspaces = state?.workspaces ?? openTileWorkspaces()
+        let workspaces = (state?.workspaces ?? openTileWorkspaces()).filter {
+            WorkspaceBarLayout.showsWorkspace(windowCount: $0.windowCount, isFocused: $0.isFocused)
+        }
         let needsButtons = renderedWorkspaces != workspaces
         if needsButtons {
             let paths = Set(workspaces.flatMap(\.applicationBundlePaths))
@@ -215,12 +219,17 @@ final class WorkspaceBarButton: NSButton {
             }
         }
         renderedWorkspaces = workspaces
+        if needsButtons {
+            codexButtons.forEach { $0.closeDetails() }
+            codexButtons.removeAll()
+        }
         for (index, pair) in panels.enumerated() {
             let hidden = sleeping || state?.fullscreenScreenIndices.contains(index + 1) == true
             if hidden { pair.left.orderOut(nil); pair.right.orderOut(nil) }
             else { pair.left.orderFrontRegardless(); pair.right.orderFrontRegardless() }
             guard needsButtons else { continue }
-            let scroll = NSScrollView(frame: pair.left.contentView!.bounds)
+            let container = NSView(frame: pair.left.contentView!.bounds)
+            let scroll = NSScrollView(frame: container.bounds)
             scroll.autoresizingMask = [.width, .height]
             scroll.drawsBackground = false
             scroll.hasHorizontalScroller = false
@@ -239,9 +248,19 @@ final class WorkspaceBarButton: NSButton {
                 content.addSubview(b)
                 x += b.frame.width + 4
             }
+            let layout = WorkspaceBarLayout(width: container.bounds.width, contentWidth: x + 6)
+            scroll.frame.size.width = layout.workspaceWidth
             content.frame = CGRect(x: 0, y: 0, width: max(x + 6, scroll.bounds.width), height: 28)
             scroll.documentView = content
-            pair.left.contentView = scroll
+            container.addSubview(scroll)
+            if layout.statusWidth > 0 {
+                let usage = CodexBarButton(status: codexBar)
+                usage.frame = CGRect(x: container.bounds.width - layout.statusWidth - 4, y: 3, width: layout.statusWidth, height: 22)
+                usage.update()
+                container.addSubview(usage)
+                codexButtons.append(usage)
+            }
+            pair.left.contentView = container
             if let active = content.subviews.first(where: { $0.identifier?.rawValue == workspaces.first(where: \.isFocused)?.name }) {
                 active.scrollToVisible(active.bounds)
             }
@@ -255,6 +274,8 @@ final class WorkspaceBarButton: NSButton {
     private func startStatus() {
         stopStatus()
         let version = generation
+        codexBar.onChange = { [weak self] in self?.codexButtons.forEach { $0.update() } }
+        codexBar.start()
         if musicItem?.state == .on { music.start() }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
@@ -331,6 +352,8 @@ final class WorkspaceBarButton: NSButton {
 
     private func stopStatus() {
         generation += 1
+        codexBar.stop()
+        codexButtons.forEach { $0.closeDetails() }
         music.stop()
         timer?.invalidate(); timer = nil
         network?.cancel(); network = nil
