@@ -59,9 +59,11 @@ final class WorkspaceBarButton: NSButton {
     }
 }
 
-/// Native panels and event-driven workspaces; the only periodic work is a minute clock tick.
+/// Native panels and event-driven workspaces; music updates are event-driven and the clock ticks once per minute.
 @MainActor final class SplitMenuBar: NSObject {
     private let key = "splitMenuBarEnabled"
+    private let music = AppleMusicPlayer()
+    private var musicItem: NSMenuItem?
     private var panels: [(left: BarPanel, right: BarPanel)] = []
     private var subscription: AnyCancellable?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -94,6 +96,11 @@ final class WorkspaceBarButton: NSButton {
         item.toolTip = "For the top-edge bar, set the macOS menu bar to automatically hide in System Settings."
         menu.addItem(item)
         toggleItem = item
+        let musicItem = NSMenuItem(title: "Show Apple Music Player", action: #selector(toggleMusic), keyEquivalent: "")
+        musicItem.target = self
+        musicItem.state = UserDefaults.standard.bool(forKey: "splitBarAppleMusic") ? .on : .off
+        menu.addItem(musicItem)
+        self.musicItem = musicItem
         item.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
         if item.state == .on { start() }
     }
@@ -103,6 +110,15 @@ final class WorkspaceBarButton: NSButton {
         UserDefaults.standard.set(enabled, forKey: key)
         toggleItem?.state = enabled ? .on : .off
         if enabled { start() } else { stop() }
+    }
+
+    @objc private func toggleMusic() {
+        let enabled = musicItem?.state != .on
+        musicItem?.state = enabled ? .on : .off
+        UserDefaults.standard.set(enabled, forKey: "splitBarAppleMusic")
+        if enabled && running && !sleeping { music.start() } else { music.stop() }
+        renderedStatus = nil
+        renderStatus()
     }
 
     private func start() {
@@ -235,6 +251,7 @@ final class WorkspaceBarButton: NSButton {
     private func startStatus() {
         stopStatus()
         let version = generation
+        if musicItem?.state == .on { music.start() }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
             let wifi = path.status == .satisfied && path.usesInterfaceType(.wifi)
@@ -293,6 +310,7 @@ final class WorkspaceBarButton: NSButton {
 
     private func stopStatus() {
         generation += 1
+        music.stop()
         timer?.invalidate(); timer = nil
         network?.cancel(); network = nil
         if let source = powerSource { CFRunLoopSourceInvalidate(source) }
@@ -336,7 +354,9 @@ final class WorkspaceBarButton: NSButton {
         guard renderedStatus != presentation else { return }
         renderedStatus = presentation
         for pair in panels {
-            let view = NSView(frame: pair.right.contentView!.bounds)
+            let view = pair.right.contentView!
+            let existingMusic = view.subviews.compactMap { $0 as? MusicBarView }.first
+            view.subviews.filter { !($0 is MusicBarView) }.forEach { $0.removeFromSuperview() }
             var modules: [NSButton] = []
             let networkButton = button("", symbol: wifi ? "wifi" : "network", action: #selector(networkSettings))
             networkButton.toolTip = wifi ? "Connected through Wi-Fi" : "Network settings"
@@ -358,7 +378,12 @@ final class WorkspaceBarButton: NSButton {
                 b.frame = CGRect(x: x, y: 3, width: width, height: 22)
                 view.addSubview(b)
             }
-            pair.right.contentView = view
+            if musicItem?.state == .on, x >= 68 {
+                let musicView = existingMusic ?? MusicBarView(player: music, width: min(240, x - 16))
+                musicView.resize(to: min(240, x - 16))
+                if musicView.superview == nil { view.addSubview(musicView) }
+            }
+            if musicItem?.state != .on || x < 68 { existingMusic?.removeFromSuperview() }
         }
     }
 

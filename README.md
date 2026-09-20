@@ -133,3 +133,10 @@ hides for engine fullscreen workspaces. Panels do not join native fullscreen
 spaces. Disable the toggle to restore the original tiling space. Status controls
 open the corresponding system settings; workspace buttons use the normal
 OpenTile switching queue and continue working with gestures paused.
+
+Enable **Show Apple Music Player** in OpenTile’s menu to add album artwork, the
+current track, and play/pause to the right bar when space allows. Click the artwork
+for a larger cover and previous/next controls. Open Music and play a song first;
+macOS will ask to allow OpenTile to control Music. If denied, enable OpenTile →
+Music in **Privacy & Security → Automation**. Missing artwork uses a music icon.
+The player uses playback notifications rather than a polling timer.
