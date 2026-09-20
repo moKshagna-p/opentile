@@ -68,6 +68,10 @@ final class WorkspaceBarButton: NSButton {
     private var subscription: AnyCancellable?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var timer: Timer?
+    private var trafficTimer: Timer?
+    private var traffic = NetworkTraffic()
+    private var trafficText = "↓ 0 B/s  ↑ 0 B/s"
+    private var trafficButtons: [NSButton] = []
     private var network: NWPathMonitor?
     private var powerSource: CFRunLoopSource?
     private var audioListener: AudioObjectPropertyListenerBlock?
@@ -263,6 +267,13 @@ final class WorkspaceBarButton: NSButton {
         }
         network = monitor
         monitor.start(queue: DispatchQueue(label: "OpenTile.menuBar.network", qos: .utility))
+        updateTraffic()
+        let trafficTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateTraffic() }
+        }
+        trafficTimer.tolerance = 0.2
+        self.trafficTimer = trafficTimer
+        RunLoop.main.add(trafficTimer, forMode: .common)
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ context in
             guard let context else { return }
@@ -290,6 +301,16 @@ final class WorkspaceBarButton: NSButton {
         RunLoop.main.add(timer, forMode: .common)
     }
 
+    private func updateTraffic() {
+        guard running, !sleeping else { return }
+        let rates = traffic.sample(NetworkTraffic.readInterfaces(), at: ProcessInfo.processInfo.systemUptime)
+        trafficText = "↓ \(NetworkTraffic.format(rates.down))  ↑ \(NetworkTraffic.format(rates.up))"
+        for button in trafficButtons {
+            button.title = trafficText
+            button.setAccessibilityLabel("Download \(NetworkTraffic.format(rates.down)), upload \(NetworkTraffic.format(rates.up))")
+        }
+    }
+
     private static func audioAddress(_ selector: AudioObjectPropertySelector, output: Bool = false) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress(mSelector: selector, mScope: output ? kAudioDevicePropertyScopeOutput : kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
     }
@@ -313,6 +334,9 @@ final class WorkspaceBarButton: NSButton {
         music.stop()
         timer?.invalidate(); timer = nil
         network?.cancel(); network = nil
+        trafficTimer?.invalidate(); trafficTimer = nil
+        traffic = NetworkTraffic()
+        trafficButtons.removeAll()
         if let source = powerSource { CFRunLoopSourceInvalidate(source) }
         powerSource = nil
         if let listener = audioListener {
@@ -338,6 +362,7 @@ final class WorkspaceBarButton: NSButton {
         address = Self.audioAddress(kAudioDevicePropertyMute, output: true)
         _ = AudioObjectGetPropertyData(audioDevice, &address, 0, nil, &size, &muted)
         var battery: String?
+        var batteryFraction: Double = 0
         if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
            let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
             for source in sources {
@@ -345,7 +370,8 @@ final class WorkspaceBarButton: NSButton {
                       description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
                       let current = description[kIOPSCurrentCapacityKey] as? Int,
                       let maximum = description[kIOPSMaxCapacityKey] as? Int, maximum > 0 else { continue }
-                battery = "\(current * 100 / maximum)%" + ((description[kIOPSIsChargingKey] as? Bool == true) ? " +" : "")
+                batteryFraction = BatteryIndicator.fraction(current: current, maximum: maximum)
+                battery = "\(Int((batteryFraction * 100).rounded()))%" + ((description[kIOPSIsChargingKey] as? Bool == true) ? " +" : "")
             }
         }
         let clock = clockFormat.string(from: Date())
@@ -353,6 +379,7 @@ final class WorkspaceBarButton: NSButton {
         let presentation = "\(wifi)|\(sound)|\(battery ?? "")|\(clock)"
         guard renderedStatus != presentation else { return }
         renderedStatus = presentation
+        trafficButtons.removeAll()
         for pair in panels {
             let view = pair.right.contentView!
             let existingMusic = view.subviews.compactMap { $0 as? MusicBarView }.first
@@ -362,8 +389,19 @@ final class WorkspaceBarButton: NSButton {
             networkButton.toolTip = wifi ? "Connected through Wi-Fi" : "Network settings"
             networkButton.setAccessibilityLabel(networkButton.toolTip)
             modules.append(networkButton)
+            let trafficButton = button(trafficText, action: #selector(networkSettings))
+            trafficButton.toolTip = "Download / upload over Wi-Fi and Ethernet"
+            trafficButton.setAccessibilityLabel(trafficText)
+            trafficButtons.append(trafficButton)
+            modules.append(trafficButton)
             modules.append(button(sound, symbol: muted != 0 ? "speaker.slash" : "speaker.wave.2", action: #selector(soundSettings)))
-            if let battery { modules.append(button(battery, symbol: "battery.100", action: #selector(batterySettings))) }
+            if let battery {
+                let batteryButton = button(battery, action: #selector(batterySettings))
+                batteryButton.image = BatteryIndicator.image(fraction: batteryFraction)
+                batteryButton.imagePosition = .imageLeading
+                batteryButton.setAccessibilityLabel("Battery \(battery)")
+                modules.append(batteryButton)
+            }
             modules.append(button(clock, action: #selector(clockSettings)))
             let appButton = button("", symbol: "rectangle.3.group", action: #selector(showMenu))
             appButton.setAccessibilityLabel("OpenTile menu")
@@ -372,7 +410,7 @@ final class WorkspaceBarButton: NSButton {
             var x = view.bounds.width - 8
             for b in modules.reversed() {
                 b.sizeToFit()
-                let width = max(25, b.frame.width + 16)
+                let width = b === trafficButton ? 190 : max(25, b.frame.width + 16)
                 guard x - width >= 0 else { continue }
                 x -= width
                 b.frame = CGRect(x: x, y: 3, width: width, height: 22)

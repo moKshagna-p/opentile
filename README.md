@@ -121,8 +121,10 @@ Experimental. Trackpad input uses Apple’s private `MultitouchSupport` framewor
 
 Enable **Enable Split Menu Bar** from OpenTile's menu for a top-edge bar on each
 screen. Workspaces and full-color icons for their open apps sit to the left of
-the camera notch; Wi-Fi/network, sound,
-battery (when present), clock, and OpenTile controls sit on the right. On screens
+the camera notch; Wi-Fi/network, live download (↓) and upload (↑) rates, sound,
+battery (when present), clock, and OpenTile controls sit on the right. Network
+rates show bytes per second across Wi-Fi and Ethernet, refreshed once per second.
+The battery icon fills proportionally to its charge. On screens
 without a notch, a small center gap separates the two halves. Scroll the workspace
 strip when its buttons exceed the available space.
 
