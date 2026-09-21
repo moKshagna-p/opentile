@@ -31,7 +31,8 @@ final class MacWindow: Window {
 
         // atomic synchronous section
         if let existing = allWindowsMap[windowId] { return existing }
-        let window = MacWindow(windowId, macApp, lastFloatingSize: rect?.size, parent: data.parent, adaptiveWeight: data.adaptiveWeight, index: data.index)
+        let binding = isStartup ? data : dwindleBindingForNewWindow(data)
+        let window = MacWindow(windowId, macApp, lastFloatingSize: rect?.size, parent: binding.parent, adaptiveWeight: binding.adaptiveWeight, index: binding.index)
         allWindowsMap[windowId] = window
 
         try await debugWindowsIfRecording(window, .cancellable)
