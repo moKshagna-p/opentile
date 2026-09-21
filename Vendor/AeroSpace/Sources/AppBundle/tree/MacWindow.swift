@@ -77,6 +77,7 @@ final class MacWindow: Window {
     //                        If you are unsure, it's better to pass `false`
     @MainActor
     func garbageCollect(skipClosedWindowsCache: Bool) {
+        TileResizeAnimator.shared.cancel(windowId)
         if MacWindow.allWindowsMap.removeValue(forKey: windowId) == nil {
             return
         }
@@ -190,7 +191,8 @@ final class MacWindow: Window {
         try await macApp.getAxSize(windowId, cm)
     }
 
-    override func setAxFrame(_ topLeft: CGPoint?, _ size: CGSize?) {
+    @MainActor override func setAxFrame(_ topLeft: CGPoint?, _ size: CGSize?) {
+        if TileResizeAnimator.shared.apply(self, topLeft, size) { return }
         macApp.setAxFrame(windowId, topLeft, size)
     }
 

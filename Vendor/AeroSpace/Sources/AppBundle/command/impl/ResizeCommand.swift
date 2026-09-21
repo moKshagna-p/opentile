@@ -45,6 +45,7 @@ struct ResizeCommand: Command {
         }
 
         guard let childDiff = diff.div(parent.children.count - 1) else { return .fail }
+        TileResizeAnimator.shared.prepare(parent.allLeafWindowsRecursive)
         parent.children.lazy
             .filter { $0 != node }
             .forEach { $0.setWeight(parent.orientation, $0.getWeight(parent.orientation) - childDiff) }

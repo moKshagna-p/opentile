@@ -8,7 +8,7 @@ OpenTile bundles an AeroSpace-based tiling engine with gesture controls and visu
 
 - **2D companion:** choose **2D Companion → Show Companion**, click the character and type `open Safari`, or drag it around the desktop. The layered Nami-inspired puppet has neck and waist joints, three independently deforming hair layers, pointer attention, curious head tilts, seated stretches, breathing, blinking, and greeting reactions. Hair springs respond to dragging and joint movement. Pause animation or adjust spring motion from the menu. This native sprite rig is not an editable Live2D/Cubism model. Animation stops while hidden, paused, asleep, or using Reduce Motion. Artwork and source-model credits are in the companion menu.
 - **Move tiles:** pinch and hold, then move two fingers to preview a swap or insertion.
-- **Resize tiles:** hold Option and pinch inward to grow or outward to shrink. The orange preview stays within the display’s usable area.
+- **Resize tiles:** hold Option and pinch inward to grow or outward to shrink. The orange preview stays within the display’s usable area. On release, neighboring tiles ease into their new sizes over 240 ms; Reduce Motion applies the sizes immediately.
 - **Draw to switch:** teach OpenTile a number or symbol for each workspace using three examples, then draw it to switch.
 - **Draw to open apps:** train symbols for app shortcuts imported from your active Karabiner Caps + O mappings.
 - **Workspace overview:** the menu bar shows the active workspace; the Workspaces menu lists running apps and empty workspaces.
@@ -102,7 +102,7 @@ CI does not exercise physical trackpad input, real macOS permission dialogs, or 
 
 ## Preparing public releases
 
-The current v0.6.1 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
+The current v0.6.2 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
 
 ```sh
 OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
