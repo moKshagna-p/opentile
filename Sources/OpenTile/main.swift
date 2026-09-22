@@ -423,14 +423,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.toggleItem.isEnabled = true
             }
             do {
-                let source = try await self.workspaceCommand(aerospace, ["list-workspaces", "--focused"])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !source.isEmpty else { throw AeroSpace.Failure(message: "Cannot read the current workspace") }
+                guard let source = openTileWorkspaces().first(where: \.isFocused)?.name else { throw AeroSpace.Failure(message: "Cannot read the current workspace") }
                 let animated = try await self.workspaceTransition.perform(from: source, to: destination) {
                     _ = try await self.workspaceCommand(aerospace, request.arguments)
-                    let actual = try await self.workspaceCommand(aerospace, ["list-workspaces", "--focused"])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !actual.isEmpty else { throw AeroSpace.Failure(message: "Cannot read the destination workspace") }
+                    guard let actual = openTileWorkspaces().first(where: \.isFocused)?.name else { throw AeroSpace.Failure(message: "Cannot read the destination workspace") }
                     return actual
                 }
                 self.status("Workspace · \(animated ? "ready" : "ready (no animation)")")
