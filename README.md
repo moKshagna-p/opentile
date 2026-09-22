@@ -1,161 +1,113 @@
 # OpenTile
 
-A macOS menu bar window manager with trackpad gestures, built on [AeroSpace](https://github.com/nikitabobko/AeroSpace). Move and resize tiled windows, or draw symbols to switch workspaces and open apps.
+**A little less window juggling. A little more flow.**
 
-OpenTile bundles an AeroSpace-based tiling engine with gesture controls and visual previews. Run OpenTile on its own; quit the separate AeroSpace app first.
+OpenTile is a native macOS menu bar app for tiling windows and moving between workspaces with trackpad gestures. Built on [AeroSpace](https://github.com/nikitabobko/AeroSpace), it brings gesture previews, drawn shortcuts, and a few optional desktop comforts into one app.
 
-## Features
+The tiling engine is included. Quit the standalone AeroSpace app before running OpenTile.
 
-- **2D companion:** choose **2D Companion → Show Companion**, click the character and type `open Safari`, or drag it around the desktop. The layered Nami-inspired puppet has neck and waist joints, three independently deforming hair layers, pointer attention, curious head tilts, seated stretches, breathing, blinking, and greeting reactions. Hair springs respond to dragging and joint movement. Pause animation or adjust spring motion from the menu. This native sprite rig is not an editable Live2D/Cubism model. Animation stops while hidden, paused, asleep, or using Reduce Motion. Artwork and source-model credits are in the companion menu.
-- **Move tiles:** pinch and hold, then move two fingers to preview a swap or insertion.
-- **Resize tiles:** hold Option and pinch inward to grow or outward to shrink. The orange preview stays within the display’s usable area. On release, neighboring tiles ease into their new sizes over 240 ms; Reduce Motion applies the sizes immediately.
-- **Draw to switch:** teach OpenTile a number or symbol for each workspace using three examples, then draw it to switch.
-- **Draw to open apps:** train symbols for app shortcuts imported from your active Karabiner Caps + O mappings.
-- **Workspace overview:** the menu bar shows the active workspace; the Workspaces menu lists running apps and empty workspaces.
-- **Existing configuration:** uses your AeroSpace configuration when no OpenTile configuration exists. Open and reload configuration from the menu.
-- **Workspace animations:** drawing, menu, and OpenTile URL switches use a vertical slide transition, with support for Reduce Motion. Direct engine commands and automatic app routing do not animate.
-- **Permission setup:** a first-launch setup explains and requests missing permissions. Revisit it from the menu whenever needed.
-- **In-app updates:** Sparkle checks for signed updates, with manual checks and an automatic-check toggle in the menu. Available updates appear in the menu bar without stealing focus.
+[Download](https://github.com/moKshagna-p/opentile/releases) · [Contributing](CONTRIBUTING.md) · [Report an issue](https://github.com/moKshagna-p/opentile/issues)
 
-## Requirements
+## What it does
 
-- macOS 14 or later, an Apple Silicon Mac, and a built-in trackpad.
-- Quit the separate AeroSpace app before starting OpenTile. The engine and CLI are bundled.
-- Accessibility permission for OpenTile. Screen Recording permission enables workspace animations.
-- Swift 6.2 or later to build from source. Full Xcode is not required: building and testing work with compatible Command Line Tools. The test script has been verified with Command Line Tools Swift 6.3.3.
+- **Move and resize tiles** with two-finger gestures and a preview before you commit.
+- **Draw a symbol** to switch workspaces or open an app.
+- **See your workspaces** in the menu, or enable a split menu bar with app icons and system controls.
+- **Switch with a short vertical slide**, with support for multiple displays and Reduce Motion.
+- **Pick a wallpaper** from a searchable collection of your own images and videos.
+- **Make it yours** with an optional Apple Music player, CodexBar usage meters, and an animated desktop companion.
 
-## Install and permissions
+OpenTile is experimental. Trackpad input uses Apple's private `MultitouchSupport` framework, and native macOS gestures may also respond. Feedback and small, focused contributions are welcome.
 
-Download the app ZIP from [GitHub Releases](https://github.com/moKshagna-p/opentile/releases), extract it, and move **OpenTile.app** to **Applications**. Quit the separate AeroSpace app, then open OpenTile.
+## Getting started
 
-On first launch, **Permission Setup** offers to request missing permissions:
+You'll need an **Apple Silicon Mac running macOS 14 or later**. Gesture controls require a built-in trackpad.
 
-- **Accessibility** allows OpenTile to move and resize windows.
-- **Screen Recording** enables workspace transition snapshots, which stay in memory. Workspace switching still works without it.
+1. Download the app ZIP from [Releases](https://github.com/moKshagna-p/opentile/releases).
+2. Extract it and move **OpenTile.app** to **Applications**.
+3. Quit standalone AeroSpace, then open OpenTile.
+4. Follow **Permission Setup**, then choose **Enable Gestures** from the menu bar.
 
-macOS handles each permission separately and may require reopening the app. Select **Continue** to request them, or **Later** to defer. Setup is remembered; reopen **Permission Setup…** from the menu if you deferred or revoked a grant. Enabling gestures and switching workspaces no longer initiate permission requests.
+**Accessibility** lets OpenTile move and resize windows. Optional **Screen Recording** permission enables workspace animation snapshots; images stay in memory, and switching still works without that permission. You can reopen **Permission Setup…** from the menu at any time. macOS may require reopening the app after a permission change.
 
-After granting Accessibility, select **Enable Gestures** from the menu bar. macOS owns permission grants; preserving them across updates depends on a consistent app identity and Developer ID signing team. Ad hoc development builds may prompt again after rebuilding.
+The current v0.6.2 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
 
-## Build and run
-
-From the repository root:
-
-```sh
-OPENTILE_SIGNING_IDENTITY="-" scripts/package.sh
-cp -R .build/package/OpenTile.app /Applications/
-open /Applications/OpenTile.app
-```
-
-This creates an ad hoc signed development build. For a stable signed build, set `OPENTILE_SIGNING_IDENTITY` to your code-signing identity instead of `-`. If omitted, the script selects the identity only when exactly one is available.
-
-Packaging bundles the tiling engine, CLI, Sparkle, icon, and licenses; verifies the code signature; and writes the app, `OpenTile-macOS-arm64.zip`, and `SHA256.txt` to `.build/package/`. A bare `swift run` executable does not support in-app updates.
-
-## Gestures
+## Everyday controls
 
 Start with a focused tiled window.
 
 | Action | Gesture |
 | --- | --- |
-| Move or swap | Pinch inward with two fingers, hold briefly, then move them together. Release over another tile’s center to swap, or near its edge to insert. |
+| Move or swap | Pinch inward with two fingers, hold briefly, then move them together. Release over a tile's center to swap, or near its edge to insert. |
 | Resize | Hold Option before touching the trackpad. Pinch inward to grow or spread outward to shrink, then lift to apply. |
 | Switch workspace | Hold Control–Option, draw a saved symbol with one finger, then release the keys. |
-| Open app | Hold Option, draw a saved app symbol with one finger, then release Option. Two fingers still resize. |
+| Open an app | Hold Option, draw a saved app symbol with one finger, then release Option. Two fingers still resize. |
 | Cancel | Press Escape before applying the gesture. |
 
-For a new workspace symbol, follow the training prompt or choose **Draw to Switch Workspace → Teach a Workspace Symbol**. The same menu lets you change the drawing shortcut to Control–Shift.
+Choose **Draw to Switch Workspace → Teach a Workspace Symbol** to save three examples of a symbol. That menu also offers Control–Shift as an alternative shortcut.
 
-For app symbols, choose **Draw to Open App → Teach an App Symbol** and save three examples. Available apps come from the active Caps + O layer in `~/.config/karabiner/karabiner.json`; arbitrary Karabiner actions are not imported.
+For app symbols, choose **Draw to Open App → Teach an App Symbol**. Available apps are imported from the active Caps + O layer in `~/.config/karabiner/karabiner.json`; arbitrary Karabiner actions are not imported.
 
-## Wallpapers
+Workspace menus and controls work while gestures are paused. Drawing, menu, and `opentile://workspace?name=1` switches use OpenTile's transition; direct engine commands and automatic app routing do not. Reduce Motion skips the animation.
 
-Press **Control–Option–W**, or choose **Choose Wallpaper…** from the menu bar. Type a name or source to filter, use the arrow keys to select, and press Return to apply to every connected display’s current desktop. Escape clears the search, then closes the picker. **Command–O** opens the Wallpapers folder in Finder. Add files there, then reopen the picker to refresh. This works while gestures are paused.
-
-The picker creates and reads **`~/Pictures/Wallpapers`**, including its subfolders. Put your wallpaper images or videos there. Videos become persistent still images in `~/Library/Application Support/OpenTile/Wallpaper Stills`. It does not download Apple assets or provide live video wallpapers.
-
-The slanted carousel and 420 ms center-out diagonal reveal follow [Omarchy’s wallpaper interface](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Reduce Motion skips transitions. Wallpaper changes use native macOS APIs without Screen Recording permission.
-
-
-## Configuration
-
-OpenTile checks `~/.opentile.toml` and `${XDG_CONFIG_HOME:-~/.config}/opentile/opentile.toml` before falling back to your AeroSpace configuration. Use the menu to open or reload configuration. A separate AeroSpace installation is not required.
-
-## Tests and CI
-
-Run the Swift Testing suite without XCTest or a full Xcode installation:
-
-```sh
-scripts/test.sh
-scripts/test.sh --filter PermissionSetupTests
-```
-
-The script supplies framework and runtime paths when using Command Line Tools. The suite covers gestures, app mapping, workspace drawing and switching, the embedded engine, updater behavior, permission setup logic, and runtime scheduling.
-
-The [Build macOS app workflow](.github/workflows/build.yml) runs on every push to `main`, `v*` tags, every pull request, and manual dispatch. Superseded runs are cancelled and jobs are limited to 30 minutes. It:
-
-1. Checks shell script syntax and the Apple Silicon runner and reports the toolchain, using macOS 15 with Xcode 26.2.
-2. Runs `scripts/test.sh`.
-3. Builds and packages an ad hoc signed app with `scripts/package.sh`.
-4. Uploads the app ZIP and SHA256 checksum as `OpenTile-macOS-arm64`, retained for 30 days.
-
-CI does not exercise physical trackpad input, real macOS permission dialogs, or permission persistence across installed updates. These need manual testing. CI artifacts are development builds, not public release packages. Documentation-only changes also run CI. Weekly Dependabot PRs propose GitHub Actions and SwiftPM updates for review.
-
-## Preparing public releases
-
-The current v0.6.2 release is Apple Development signed and not notarized; macOS may ask for permissions again after updates. The automated release preparation script requires a **Developer ID Application** certificate and the existing Sparkle signing key in Keychain, matching `scripts/sparkle-public-key.txt`. Keep the same Developer ID team and Sparkle key across releases.
-
-```sh
-OPENTILE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-  scripts/prepare-release.sh VERSION BUILD_NUMBER
-```
-
-Replace `VERSION` with a semantic version and `BUILD_NUMBER` with a positive integer, increasing both for each release. The script rejects non-Developer-ID builds and prepares the versioned ZIP, `appcast.xml`, and `SHA256.txt` under `.build/releases/vVERSION/`. Publish all three on the matching GitHub release to make the update available. The script does not publish or notarize the app.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout, development checks, and maintenance automation, and [RELEASING.md](RELEASING.md) for the release checklist and current signing limitations.
-
-## Status
-
-Experimental. Trackpad input uses Apple’s private `MultitouchSupport` framework and has been verified on Apple Silicon. Native trackpad gestures may also respond. Tile movement works within the current workspace, and AeroSpace determines the final window sizes and positions.
+## Your desktop, your choice
 
 ### Split menu bar
 
-Enable **Enable Split Menu Bar** from OpenTile's menu for a top-edge bar on each
-screen. Occupied workspaces and the active workspace appear dynamically, with
-full-color icons for their open apps to the left of
-the camera notch; Wi-Fi/network, live download (↓) and upload (↑) rates, sound,
-battery (when present), clock, and OpenTile controls sit on the right. Network
-rates show bytes per second across Wi-Fi and Ethernet, refreshed once per second.
-The battery icon fills proportionally to its charge. On screens
-without a notch, a small center gap separates the two halves. Scroll the workspace
-strip when its buttons exceed the available space.
+Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
 
-The left bar also shows compact CodexBar usage meters without a persistent
-highlight. Claude is hidden from the navbar; enabled providers remain available
-in the details popover. Sound uses an icon with its volume in the tooltip. Install and configure
-[CodexBar](https://github.com/steipete/CodexBar) to enable providers; OpenTile uses
-its bundled `dashboard` command. The navbar ring and number always show the
-remaining percentage; the detail popover follows CodexBar’s used/remaining preference.
-Click the meters for provider limits and reset times. They collapse to an icon
-when workspaces need more room. Usage refreshes every three minutes while the
-bar is enabled, pauses during sleep, and retains the last reading with an
-unavailable notice if a refresh fails. This requires a CodexBar version with the
-`dashboard` command; OpenTile does not import native macOS status items.
+Set the native macOS menu bar to automatically hide in System Settings first. OpenTile leaves that preference to you, and the native menu remains accessible at the top edge.
 
-Set the native macOS menu bar to **automatically hide** in System Settings first;
-OpenTile does not change that system preference. The native menu remains
-accessible at the top edge. Tiled windows reserve space for the bar, and the bar
-hides for engine fullscreen workspaces. Panels do not join native fullscreen
-spaces. Disable the toggle to restore the original tiling space. Status controls
-open the corresponding system settings; workspace buttons use the normal
-OpenTile switching queue and continue working with gestures paused.
+Optional integrations:
 
-Enable **Show Apple Music Player** in OpenTile’s menu to add a compact album-art
-and play/pause control to the right bar when space allows. Hover for the current
-track, or click the artwork for a compact card with song details and previous/next controls. Open Music and play a song first;
-macOS will ask to allow OpenTile to control Music. If denied, enable OpenTile →
-Music in **Privacy & Security → Automation**. Missing artwork uses a music icon.
-The player uses playback notifications rather than a polling timer. If Music
-does not provide artwork immediately, OpenTile retries three times and keeps any
-cover already loaded for that song. If artwork is still missing, it sends the
-song title, artist, and album to Apple’s iTunes catalog to find an exact match.
-Songs without matching artwork keep the music icon.
+- **CodexBar:** install and configure [CodexBar](https://github.com/steipete/CodexBar), using a version with the `dashboard` command. The bar shows remaining usage; click for provider limits and reset times. Details follow CodexBar's used/remaining preference. Usage refreshes every three minutes while enabled.
+- **Apple Music:** enable **Show Apple Music Player**, then open Music and play a song. macOS asks permission for OpenTile to control Music. Click the artwork for track details and playback controls. If local artwork is unavailable, OpenTile sends the song title, artist, and album to Apple's iTunes catalog to find a matching cover.
+
+### Wallpapers
+
+Press **Control–Option–W** or choose **Choose Wallpaper…**. Type to filter, use the arrow keys to select, and press Return to apply to every connected display's current desktop. Escape clears the search, then closes the picker. **Command–O** opens your wallpaper folder.
+
+Add images or videos to `~/Pictures/Wallpapers`, including subfolders, and reopen the picker to refresh. Videos become still images stored in `~/Library/Application Support/OpenTile/Wallpaper Stills`; this isn't a live-video wallpaper player. The picker doesn't download wallpaper assets.
+
+The carousel and reveal are inspired by [Omarchy](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Wallpaper changes use native macOS APIs and don't need Screen Recording permission.
+
+### Desktop companion
+
+Choose **2D Companion → Show Companion** for an optional animated character. Drag it around, or click it and type `open Safari`. Animation and motion controls live in the companion menu, alongside artwork credits. Animation pauses when hidden, asleep, paused, or using Reduce Motion. The companion is a native sprite rig, not an editable Live2D model.
+
+## Configuration
+
+OpenTile checks these locations before falling back to your AeroSpace configuration:
+
+- `~/.opentile.toml`
+- `${XDG_CONFIG_HOME:-~/.config}/opentile/opentile.toml`
+
+Open or reload configuration from the menu. A separate AeroSpace installation isn't needed.
+
+Sparkle provides in-app updates. You can check manually or enable automatic checks from the menu.
+
+## Build and contribute
+
+Use **Swift 6.2 or later** with compatible Command Line Tools; full Xcode isn't required. From the repository root:
+
+```sh
+scripts/test.sh
+OPENTILE_SIGNING_IDENTITY="-" scripts/package.sh
+```
+
+The packaged app, ZIP, and checksum are written to `.build/package/`. Quit any running OpenTile instance before copying the app into Applications:
+
+```sh
+ditto .build/package/OpenTile.app /Applications/OpenTile.app
+open /Applications/OpenTile.app
+```
+
+`-` creates an ad hoc signed development build, which may require granting permissions again. Set `OPENTILE_SIGNING_IDENTITY` to your own signing identity for a signed build; if omitted, the script selects an identity only when exactly one is available. A bare `swift run` executable doesn't support in-app updates.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout, focused tests, and manual checks. [RELEASING.md](RELEASING.md) covers packaging and release signing. CI checks tests and builds; physical trackpad behavior, permissions, and visual smoothness still need testing on a Mac.
+
+Found something odd? [Open an issue](https://github.com/moKshagna-p/opentile/issues) with your macOS version, OpenTile version, and steps to reproduce it. For gesture issues, include what you expected and what happened instead.
+
+## Thanks
+
+OpenTile builds on [AeroSpace](https://github.com/nikitabobko/AeroSpace) and [Sparkle](https://sparkle-project.org/), with interface inspiration from [Omarchy](https://github.com/omacom/omarchy). Bundled dependency licenses ship with the app; companion artwork credits are available in its menu.
