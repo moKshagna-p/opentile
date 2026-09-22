@@ -3,6 +3,20 @@ import Testing
 @testable import OpenTile
 
 struct WallpaperTests {
+    @Test @MainActor func wallpaperPickerGuidanceUsesNativeSystemTypography() throws {
+        let guidance = WallpaperPickerStyle.selectionGuidance(selected: 2, count: 7)
+        #expect(guidance.string == "3 of 7   ←  →  Select   ↩  Apply to All Displays   ⎋  Close")
+
+        let font = try #require(guidance.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        #expect(!font.isFixedPitch)
+        #expect(font.pointSize == NSFont.smallSystemFontSize)
+
+        let paragraphStyle = try #require(
+            guidance.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        )
+        #expect(paragraphStyle.alignment == .center)
+    }
+
     @Test func wallpaperSearchMatchesEveryTokenAcrossNameAndSource() {
         let entry = WallpaperEntry(url: URL(fileURLWithPath: "/tmp/sea.MOV"), name: "Côte at Dawn", source: "macOS aerial")
         #expect(entry.isVideo)

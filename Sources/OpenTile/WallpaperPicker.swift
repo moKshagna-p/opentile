@@ -1,6 +1,31 @@
 import AppKit
 import Carbon
 
+enum WallpaperPickerStyle {
+    private static let guidanceFont = NSFont.systemFont(
+        ofSize: NSFont.smallSystemFontSize,
+        weight: .regular
+    )
+
+    static func selectionGuidance(selected: Int, count: Int) -> NSAttributedString {
+        guidance("\(selected + 1) of \(count)   ←  →  Select   ↩  Apply to All Displays   ⎋  Close")
+    }
+
+    static func searchGuidance() -> NSAttributedString {
+        guidance("Type a Name or Source   ⎋  Clear Search   ⌘O  Open Folder")
+    }
+
+    private static func guidance(_ text: String) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        return NSAttributedString(string: text, attributes: [
+            .font: guidanceFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: paragraphStyle,
+        ])
+    }
+}
+
 @MainActor final class WallpaperPicker: NSObject, NSSearchFieldDelegate, NSWindowDelegate {
     private var panel: WallpaperPanel?
     private var carousel: WallpaperCarousel?
@@ -78,17 +103,17 @@ import Carbon
         content.addSubview(search)
         caption.frame = CGRect(x: 30, y: height * 0.30 - 50, width: width - 60, height: 30)
         caption.alignment = .center
-        caption.font = .systemFont(ofSize: 19, weight: .medium)
-        caption.textColor = .white
+        caption.font = .systemFont(ofSize: 17, weight: .semibold)
+        caption.textColor = .labelColor
         content.addSubview(caption)
         hint.frame = CGRect(x: 30, y: height * 0.30 - 131, width: width - 60, height: 22)
         hint.alignment = .center
-        hint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        hint.textColor = NSColor(white: 0.75, alpha: 1)
+        hint.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        hint.textColor = .secondaryLabelColor
         content.addSubview(hint)
         let browse = NSButton(title: "Open Wallpapers Folder  ⌘O", target: self, action: #selector(browse))
         browse.isBordered = false
-        browse.attributedTitle = NSAttributedString(string: browse.title, attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 13, weight: .medium)])
+        browse.attributedTitle = NSAttributedString(string: browse.title, attributes: [.foregroundColor: NSColor.labelColor, .font: NSFont.systemFont(ofSize: 13, weight: .medium)])
         browse.frame = CGRect(x: (width - 260) / 2, y: height * 0.30 - 174, width: 260, height: 28)
         content.addSubview(browse)
         self.panel = panel
@@ -148,10 +173,10 @@ import Carbon
         if filtered.indices.contains(selected) {
             let entry = filtered[selected]
             caption.stringValue = "\(entry.name)  ·  \(entry.source)\(entry.isVideo ? " · still frame" : "")"
-            hint.stringValue = "\(selected + 1)/\(filtered.count)   ← → select   Return apply to all displays   Esc close"
+            hint.attributedStringValue = WallpaperPickerStyle.selectionGuidance(selected: selected, count: filtered.count)
         } else {
             caption.stringValue = entries.isEmpty ? "Add images to ~/Pictures/Wallpapers, then reopen the picker" : "No matching wallpapers"
-            hint.stringValue = "Type a name or source · Esc clears search · ⌘O browse"
+            hint.attributedStringValue = WallpaperPickerStyle.searchGuidance()
         }
     }
 
