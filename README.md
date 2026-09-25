@@ -15,7 +15,7 @@ The tiling engine is included. Quit the standalone AeroSpace app before running 
 - **See your workspaces** in the menu, or enable a split menu bar with app icons and system controls.
 - **Switch with a short vertical slide**, with support for multiple displays and Reduce Motion.
 - **Pick a wallpaper** from a searchable collection of your own images and videos.
-- **Make it yours** with an optional Apple Music player, CodexBar usage meters, and an animated desktop companion.
+- **Make it yours** with an optional Apple Music player and CodexBar usage meters.
 
 OpenTile is experimental. Trackpad input uses Apple's private `MultitouchSupport` framework, and native macOS gestures may also respond. Feedback and small, focused contributions are welcome.
 
@@ -74,10 +74,6 @@ Add images or videos to `~/Pictures/Wallpapers`, including subfolders, and reope
 
 The carousel and reveal are inspired by [Omarchy](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Wallpaper changes use native macOS APIs and don't need Screen Recording permission.
 
-### Desktop companion
-
-Choose **2D Companion → Show Companion** for an optional animated character. Drag it around, or click it and type `open Safari`. Animation and motion controls live in the companion menu, alongside artwork credits. Animation pauses when hidden, asleep, paused, or using Reduce Motion. The companion is a native sprite rig, not an editable Live2D model.
-
 ## Configuration
 
 OpenTile checks these locations before falling back to your AeroSpace configuration:
@@ -113,4 +109,4 @@ Found something odd? [Open an issue](https://github.com/moKshagna-p/opentile/iss
 
 ## Thanks
 
-OpenTile builds on [AeroSpace](https://github.com/nikitabobko/AeroSpace) and [Sparkle](https://sparkle-project.org/), with interface inspiration from [Omarchy](https://github.com/omacom/omarchy). Bundled dependency licenses ship with the app; companion artwork credits are available in its menu.
+OpenTile builds on [AeroSpace](https://github.com/nikitabobko/AeroSpace) and [Sparkle](https://sparkle-project.org/), with interface inspiration from [Omarchy](https://github.com/omacom/omarchy). Bundled dependency licenses ship with the app.

@@ -14,7 +14,7 @@ if [[ -z "$signing_identity" ]]; then
     signing_identity="$identities"
 fi
 version="${OPENTILE_VERSION:-0.6.3}"
-build_number="${OPENTILE_BUILD_NUMBER:-14}"
+build_number="${OPENTILE_BUILD_NUMBER:-15}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
     echo "Use a semantic OPENTILE_VERSION and positive integer OPENTILE_BUILD_NUMBER." >&2
     exit 1
@@ -23,6 +23,8 @@ swift build -c release
 swift build -c release --product aerospace
 bin_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/package/OpenTile.app"
+# Rebuild the bundle from scratch so removed resources cannot survive from a prior package.
+rm -rf "$app_dir"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Frameworks" "$app_dir/Contents/Resources"
 iconset="$PWD/.build/package/AppIcon.iconset"
 mkdir -p "$iconset"
