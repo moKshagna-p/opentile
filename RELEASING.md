@@ -8,7 +8,7 @@ number for every release, including minor-version transitions.
 
 ## Signing status
 
-The current v0.6.2 release uses Apple Development signing and is not notarized.
+The current v0.6.3 release uses Apple Development signing and is not notarized.
 This distribution mode may require users to grant permissions again after updates.
 Do not describe it as Developer ID signed or notarized.
 

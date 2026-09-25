@@ -13,8 +13,8 @@ if [[ -z "$signing_identity" ]]; then
     fi
     signing_identity="$identities"
 fi
-version="${OPENTILE_VERSION:-0.6.2}"
-build_number="${OPENTILE_BUILD_NUMBER:-13}"
+version="${OPENTILE_VERSION:-0.6.3}"
+build_number="${OPENTILE_BUILD_NUMBER:-14}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
     echo "Use a semantic OPENTILE_VERSION and positive integer OPENTILE_BUILD_NUMBER." >&2
     exit 1

@@ -114,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         initAppBundle(promptForAccessibility: false)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "OpenTile")
+        item.button?.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "OpenTile")
         item.button?.imagePosition = .imageLeading
         workspaceIndicator = TrayMenuModel.shared.$trayText
             .removeDuplicates()

@@ -1,9 +1,39 @@
 import AppKit
 import Testing
-import AppBundle
+@testable import AppBundle
 @testable import OpenTile
 
 struct SplitMenuBarTests {
+    @Test @MainActor func statusDropdownKeepsDetailsAndSettingsInNativeMenu() {
+        let menu = SplitBarDropdown.make(
+            title: "NETWORK", subtitle: "Wi-Fi connection", symbol: "wifi",
+            value: "Connected", visual: .activity([0.2, 0.6, 0.4]),
+            details: [.init(title: "Download", value: "12 KB/s", symbol: "arrow.down"),
+                      .init(title: "Upload", value: "2 KB/s", symbol: "arrow.up")],
+            settingsTitle: "Open Network Settings…",
+            settingsAction: #selector(NSApplication.terminate(_:)), target: NSApplication.shared)
+
+        #expect(menu.items.count == 6)
+        #expect(menu.items[0].view?.frame.size == NSSize(width: 280, height: 110))
+        #expect(menu.items[0].view?.accessibilityLabel() == "NETWORK, Connected, Wi-Fi connection")
+        #expect(menu.items[1].isSeparatorItem)
+        #expect(menu.items[2].view?.accessibilityLabel() == "Download, 12 KB/s")
+        #expect(menu.items[3].view?.accessibilityLabel() == "Upload, 2 KB/s")
+        #expect(menu.items[4].isSeparatorItem)
+        #expect(menu.items[5].title == "Open Network Settings…")
+        #expect(menu.items[5].isEnabled)
+        #expect(menu.items[5].target === NSApplication.shared)
+
+        SplitBarDropdown.update(menu, title: "NETWORK", subtitle: "Wired connection",
+            symbol: "network", value: "Connected", visual: .activity([0.8, 0.1]),
+            details: [.init(title: "Download", value: "4 MB/s", symbol: "arrow.down"),
+                      .init(title: "Upload", value: "20 KB/s", symbol: "arrow.up")])
+        #expect(menu.items[0].view?.accessibilityLabel() == "NETWORK, Connected, Wired connection")
+        #expect(menu.items[2].view?.accessibilityLabel() == "Download, 4 MB/s")
+        #expect(menu.items[3].view?.accessibilityLabel() == "Upload, 20 KB/s")
+        #expect(menu.items[5].target === NSApplication.shared)
+    }
+
     @Test @MainActor func workspaceIconsRemainUnclippedAndClickable() {
         let button = WorkspaceBarButton(title: "1", target: nil, action: nil)
         button.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
@@ -12,6 +42,32 @@ struct SplitMenuBarTests {
         button.frame = NSRect(x: 0, y: 0, width: button.preferredWidth, height: 22)
         #expect(button.preferredWidth > emptyWidth + 160)
         #expect(button.hitTest(NSPoint(x: button.bounds.maxX - 5, y: 11)) === button)
+    }
+
+    @Test @MainActor func workspaceSelectionReusesButtonsAcrossFocusChanges() {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 160, height: 28))
+        let content = WorkspaceBarContent(frame: scroll.bounds)
+        scroll.documentView = content
+        let makeWorkspace = { (name: String, focused: Bool) in
+            OpenTileWorkspaceSummary(name: name, applications: [], applicationBundlePaths: [],
+                                     windowCount: 1, isFocused: focused)
+        }
+        let first = [makeWorkspace("1", true), makeWorkspace("2", false)]
+        content.update(first, icons: [:], target: NSApplication.shared,
+                       action: #selector(NSApplication.terminate(_:)), in: scroll)
+        let firstButton = content.button(named: "1")
+        let secondButton = content.button(named: "2")
+        let selection = content.subviews.first { $0 is WorkspaceBarSelection }
+        #expect(content.selectionFrame == firstButton?.frame)
+        #expect(selection?.hitTest(NSPoint(x: 12, y: 12)) == nil)
+
+        let second = [makeWorkspace("1", false), makeWorkspace("2", true)]
+        content.update(second, icons: [:], target: NSApplication.shared,
+                       action: #selector(NSApplication.terminate(_:)), in: scroll)
+        #expect(content.button(named: "1") === firstButton)
+        #expect(content.button(named: "2") === secondButton)
+        #expect(content.subviews.first { $0 is WorkspaceBarSelection } === selection)
+        #expect(secondButton?.accessibilityLabel()?.contains("active") == true)
     }
 
     @Test @MainActor func panelPreservesTopEdgeAboveVisibleFrame() {
