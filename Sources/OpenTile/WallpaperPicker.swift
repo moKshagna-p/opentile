@@ -52,6 +52,7 @@ enum WallpaperPickerStyle {
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     var onStatus: ((String) -> Void)?
+    var onWallpaperChange: (() -> Void)?
 
     func install(in menu: NSMenu) {
         let item = menu.addItem(withTitle: "Choose Wallpaper…", action: #selector(show), keyEquivalent: "w")
@@ -245,6 +246,7 @@ enum WallpaperPickerStyle {
                 let (url, image) = try result.get()
                 self.dismiss(cancelApply: false)
                 try await self.transition.apply(url: url, image: image)
+                self.onWallpaperChange?()
                 self.onStatus?("Wallpaper changed to \(entry.name)")
             } catch is CancellationError {
             } catch {

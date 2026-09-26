@@ -139,6 +139,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let config = menu.addItem(withTitle: "Open Window Manager Configuration…", action: #selector(openEngineConfig), keyEquivalent: "")
         config.target = self
         wallpaperPicker.onStatus = { [weak self] in self?.status($0) }
+        wallpaperPicker.onWallpaperChange = { [weak self] in
+            self?.splitMenuBar.refreshWallpaperAccents(force: true)
+        }
         wallpaperPicker.install(in: menu)
         appDrawing.install(in: menu)
         appDrawing.canTrain = { [weak self] in self?.enabled == true && self?.committing == false }

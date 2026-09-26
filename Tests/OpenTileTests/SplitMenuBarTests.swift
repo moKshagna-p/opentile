@@ -4,6 +4,42 @@ import Testing
 @testable import OpenTile
 
 struct SplitMenuBarTests {
+    @Test func wallpaperAccentFollowsDominantColorAndStaysRestrained() {
+        let blue = Array(repeating: [UInt8(18), 75, 225, 255] as [UInt8], count: 80).flatMap { $0 }
+        let red = Array(repeating: [UInt8(225), 45, 30, 255] as [UInt8], count: 20).flatMap { $0 }
+        let accent = SplitBarWallpaperAccent.fromRGBA(blue + red)
+        #expect(accent != nil)
+        #expect(accent!.blue > accent!.red)
+        #expect(accent!.blue > accent!.green)
+        #expect(accent!.blue < 1)
+    }
+
+    @Test func wallpaperAccentHandlesGrayscaleAndTransparentImages() {
+        let gray = Array(repeating: [UInt8(70), 70, 70, 255] as [UInt8], count: 100).flatMap { $0 }
+        let accent = SplitBarWallpaperAccent.fromRGBA(gray)
+        #expect(accent?.red == accent?.green)
+        #expect(accent?.green == accent?.blue)
+        #expect(SplitBarWallpaperAccent.fromRGBA([0, 0, 0, 0]) == nil)
+    }
+
+    @Test func wallpaperAccentReadsAnImageFile() throws {
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4,
+                                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                                   isPlanar: false, colorSpaceName: .deviceRGB,
+                                                   bytesPerRow: 0, bitsPerPixel: 0))
+        let green = NSColor(calibratedRed: 0.08, green: 0.8, blue: 0.12, alpha: 1)
+        for y in 0..<4 {
+            for x in 0..<4 { bitmap.setColor(green, atX: x, y: y) }
+        }
+        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let accent = try #require(SplitBarWallpaperAccent.read(from: url))
+        #expect(accent.green > accent.red)
+        #expect(accent.green > accent.blue)
+    }
+
     @Test @MainActor func statusDropdownKeepsDetailsAndSettingsInNativeMenu() {
         let menu = SplitBarDropdown.make(
             title: "NETWORK", subtitle: "Wi-Fi connection", symbol: "wifi",

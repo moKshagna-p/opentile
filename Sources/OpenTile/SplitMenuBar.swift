@@ -33,12 +33,17 @@ final class BarPanel: NSPanel {
 
 /// Keep the bar quiet at rest, with just enough depth to separate it from the desktop.
 private final class SplitBarSurface: NSView {
+    var accent: SplitBarWallpaperAccent? { didSet { needsDisplay = true } }
+
     override func draw(_ dirtyRect: NSRect) {
         NSGradient(starting: NSColor(calibratedWhite: 0.105, alpha: 1),
                    ending: NSColor(calibratedWhite: 0.055, alpha: 1))?
             .draw(in: bounds, angle: 90)
-        NSColor.white.withAlphaComponent(0.11).setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+        let ambientColor = accent?.color ?? NSColor(calibratedWhite: 0.55, alpha: 1)
+        let glowHeight = min(bounds.height, 13)
+        NSGradient(starting: ambientColor.withAlphaComponent(0.23),
+                   ending: ambientColor.withAlphaComponent(0))?
+            .draw(in: NSRect(x: 0, y: 0, width: bounds.width, height: glowHeight), angle: 90)
     }
 }
 
@@ -421,6 +426,10 @@ final class WorkspaceBarButton: NSButton {
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var timer: Timer?
     private var trafficTimer: Timer?
+    private var wallpaperTimer: Timer?
+    private var wallpaperTask: Task<Void, Never>?
+    private var wallpaperURLs: [URL?] = []
+    private var wallpaperGeneration = 0
     private var traffic = NetworkTraffic()
     private var trafficText = "↓ 0 B/s  ↑ 0 B/s"
     private var trafficButtons: [NSButton] = []
@@ -501,6 +510,9 @@ final class WorkspaceBarButton: NSButton {
             self?.renderWorkspaces()
         }
         observe(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { $0.rebuild() }
+        observe(NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification) {
+            $0.refreshWallpaperAccents()
+        }
         observe(NSWorkspace.shared.notificationCenter, NSWorkspace.willSleepNotification) {
             $0.sleeping = true
             $0.stopStatus()
@@ -513,12 +525,24 @@ final class WorkspaceBarButton: NSButton {
         }
         startStatus()
         rebuild()
+        let wallpaperTimer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshWallpaperAccents() }
+        }
+        wallpaperTimer.tolerance = 2
+        self.wallpaperTimer = wallpaperTimer
+        RunLoop.main.add(wallpaperTimer, forMode: .common)
     }
 
     func stop() {
         running = false
         subscription = nil
         stopStatus()
+        wallpaperTimer?.invalidate()
+        wallpaperTimer = nil
+        wallpaperTask?.cancel()
+        wallpaperTask = nil
+        wallpaperGeneration += 1
+        wallpaperURLs = []
         observers.forEach { $0.0.removeObserver($0.1) }
         observers.removeAll()
         panels.forEach { $0.left.close(); $0.right.close() }
@@ -544,8 +568,38 @@ final class WorkspaceBarButton: NSButton {
                                         rightSafeArea: screen.auxiliaryTopRightArea)
             return (makePanel(frames.left), makePanel(frames.right))
         }
+        wallpaperURLs = []
+        refreshWallpaperAccents()
         renderWorkspaces()
         renderStatus()
+    }
+
+    func refreshWallpaperAccents(force: Bool = false) {
+        guard running, !sleeping, panels.count == NSScreen.screens.count else { return }
+        let urls = NSScreen.screens.map { NSWorkspace.shared.desktopImageURL(for: $0) }
+        guard force || urls != wallpaperURLs else { return }
+        wallpaperURLs = urls
+        wallpaperTask?.cancel()
+        wallpaperGeneration += 1
+        let generation = wallpaperGeneration
+        wallpaperTask = Task.detached(priority: .utility) { [weak self] in
+            var accents: [URL: SplitBarWallpaperAccent] = [:]
+            for url in Set(urls.compactMap { $0 }) {
+                guard !Task.isCancelled else { return }
+                accents[url] = SplitBarWallpaperAccent.read(from: url)
+            }
+            guard !Task.isCancelled else { return }
+            let sampledAccents = accents
+            await MainActor.run { [weak self] in
+                guard let self, self.running, self.wallpaperGeneration == generation else { return }
+                for (index, pair) in self.panels.enumerated() {
+                    let accent = urls[index].flatMap { sampledAccents[$0] }
+                    (pair.left.contentView as? SplitBarSurface)?.accent = accent
+                    (pair.right.contentView as? SplitBarSurface)?.accent = accent
+                }
+                self.wallpaperTask = nil
+            }
+        }
     }
 
     private func makePanel(_ frame: CGRect) -> BarPanel {
