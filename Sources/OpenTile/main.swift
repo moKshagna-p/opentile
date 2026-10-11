@@ -53,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private lazy var permissions = PermissionSetup()
     @MainActor private lazy var wallpaperPicker = WallpaperPicker()
     private let bridge = TouchBridge()
+    private let phonePad = PhonePad()
+    private var phoneGesture = false
     private let drawing = WorkspaceDrawing()
     private let appDrawing = WorkspaceDrawing(apps: true)
     private var appDrawingOwnedFrames = false
@@ -134,6 +136,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         toggleItem = menu.addItem(withTitle: "Enable Gestures", action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
+        phonePad.install(in: menu)
+        phonePad.onEvent = { [weak self] in self?.handlePhone($0) }
+        phonePad.onStatus = { [weak self] in self?.status($0) }
+        phonePad.onDisconnect = { [weak self] in
+            guard let self, self.phoneGesture else { return }
+            self.cancel()
+        }
         let reload = menu.addItem(withTitle: "Reload Window Manager Configuration", action: #selector(reloadEngine), keyEquivalent: "")
         reload.target = self
         let config = menu.addItem(withTitle: "Open Window Manager Configuration…", action: #selector(openEngineConfig), keyEquivalent: "")
@@ -178,6 +187,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         workspaceRequests.isReady = true
         if permissions.shouldShowOnLaunch { showPermissionSetup() }
+        if let endpointText = ProcessInfo.processInfo.environment["OPENTILE_PHONE_PAD_ENDPOINT"] {
+            guard let endpoint = PhonePadPairing.endpoint(endpointText) else {
+                status("OPENTILE_PHONE_PAD_ENDPOINT must be an HTTPS tunnel address")
+                return
+            }
+            guard AXIsProcessTrusted() else {
+                status("Allow Accessibility in Permission Setup before pairing a phone")
+                return
+            }
+            do { try phonePad.start(endpoint: endpoint) }
+            catch { status("Phone Pad could not start: \(error.localizedDescription)") }
+        }
     }
 
     @objc private func toggle() {
@@ -196,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func disable() {
+        phonePad.stop()
         cancel()
         enabled = false
         polling.stop()
@@ -219,6 +241,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defer {
             polling.settle(idleFor: ProcessInfo.processInfo.systemUptime - lastFrame,
                            drawingActive: drawing.needsPolling || appDrawing.needsPolling)
+        }
+        if phoneGesture || (phonePad.hasTouches && snapshot == nil && !readingWorkspace && !drawing.needsPolling && !appDrawing.needsPolling) {
+            _ = recognizer.cancel()
+            drawing.cancel()
+            appDrawing.cancel()
+            return
         }
         if drawing.process(frames, allowed: !committing) {
             appDrawing.cancel()
@@ -266,7 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         worker.async {
             let result = Result { try aerospace.snapshot() }
             DispatchQueue.main.async {
-                guard self.generation == token, self.enabled else { return }
+                guard self.generation == token, self.enabled || (self.phoneGesture && self.phonePad.isConnected) else { return }
                 self.readingWorkspace = false
                 switch result {
                 case .success(let snapshot):
@@ -444,14 +472,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func clearPreview() { snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; ghost.hide(); preview.hide() }
+    private func clearPreview() { snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; phoneGesture = false; ghost.hide(); preview.hide() }
     private func cancel() {
+        phonePad.cancelInput()
         drawing.cancel()
         appDrawing.cancel()
         generation += 1
         _ = recognizer.cancel()
         clearPreview()
         if !committing { status("Cancelled — layout unchanged") }
+    }
+
+    private func handlePhone(_ event: PhonePadEvent) {
+        guard AXIsProcessTrusted(), !committing else { phonePad.cancelInput(); return }
+        // A local tile preview owns the layout until it finishes or is cancelled.
+        guard phoneGesture || (snapshot == nil && !readingWorkspace && !drawing.needsPolling && !appDrawing.needsPolling) else {
+            phonePad.cancelInput()
+            return
+        }
+        switch event {
+        case .pointer(let dx, let dy):
+            guard let current = CGEvent(source: nil)?.location else { return }
+            let top = NSScreen.screens.first?.frame.maxY ?? 0
+            let displays = NSScreen.screens.map { CGRect(x: $0.frame.minX, y: top - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
+            let proposed = CGPoint(x: current.x + dx * 1800, y: current.y - dy * 1800)
+            let candidates = displays.map { rect -> CGPoint in
+                CGPoint(x: min(max(proposed.x, rect.minX), rect.maxX - 1), y: min(max(proposed.y, rect.minY), rect.maxY - 1))
+            }
+            let point = candidates.min { hypot($0.x - proposed.x, $0.y - proposed.y) < hypot($1.x - proposed.x, $1.y - proposed.y) } ?? proposed
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        case .scroll(let dx, let dy):
+            CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+                    wheel1: Int32(max(-1000, min(1000, dy * 1200))), wheel2: Int32(max(-1000, min(1000, -dx * 1200))), wheel3: 0)?.post(tap: .cghidEventTap)
+        case .click:
+            guard let point = CGEvent(source: nil)?.location else { return }
+            CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+            CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        case .gesture(let gesture):
+            switch gesture {
+            case .began(let point): phoneGesture = true; begin(point); phonePad.feedback("Move together, then lift to place", type: "armed")
+            case .moved(let point): move(point)
+            case .resizeBegan(let change): phoneGesture = true; latestResize = change; begin(.zero, resize: true); phonePad.feedback("Lift to resize", type: "armed")
+            case .resized(let change): resizePreview(change)
+            case .released: if phoneGesture { release(); phonePad.feedback("Ready") }
+            case .cancelled: if phoneGesture { cancel() }
+            }
+        }
     }
     private func status(_ message: String) {
         statusItem.title = message
@@ -497,6 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {
+        phonePad.stop()
         wallpaperPicker.stop()
         splitMenuBar.stop()
         stopOpenTileEngine()
