@@ -56,6 +56,8 @@ Workspace menus and controls work while gestures are paused. Drawing, menu, and 
 
 Build the Mac app from this checkout; Phone Pad is not included in the published release yet. Accessibility permission is required. Phone pairing works without enabling the built-in trackpad gestures.
 
+OpenTile remembers your last successful **Enable Gestures** choice and restores Mac trackpad and keyboard-modifier gestures when reopened, including for a new pairing QR. **Pause Gestures** stays paused across launches. Restoring gestures still requires Accessibility permission and a supported trackpad; enabling once in this version saves the choice.
+
 1. In `PhonePad/`, run `npm ci`, then `npm start`, and open the project in a matching Expo Go app on Android or iPhone. Expo's development QR loads the phone app; it does not pair the Mac.
 2. On the Mac, run `ngrok http http://127.0.0.1:8765`, or use another HTTPS tunnel that forwards WebSockets to that address. Choose **Pair Phone Pad…** in OpenTile and paste the tunnel's HTTPS URL.
 3. In the phone app, choose **Scan pairing QR** and scan the QR displayed by OpenTile. Reconnect uses the saved pairing while that Mac session remains available.
