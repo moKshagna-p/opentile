@@ -1,0 +1,29 @@
+{
+  "name": "opentile-phone-pad",
+  "version": "0.1.1",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-transform-types --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "expo": "~57.0.27",
+    "expo-camera": "~57.0.0",
+    "expo-crypto": "~57.0.3",
+    "expo-haptics": "~57.0.0",
+    "expo-secure-store": "~57.0.0",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.2.0",
+    "typescript": "~6.0.3"
+  }
+}

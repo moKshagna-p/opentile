@@ -50,6 +50,24 @@ For app symbols, choose **Draw to Open App → Teach an App Symbol**. Available 
 
 Workspace menus and controls work while gestures are paused. Drawing, menu, and `opentile://workspace?name=1` switches use OpenTile's transition; direct engine commands and automatic app routing do not. Reduce Motion skips the animation.
 
+## Phone Pad (development preview)
+
+`PhonePad/` contains a shared Android and iPhone app, with Android as the first target. It controls your Mac: slide one finger to move the cursor, tap to click, or slide two fingers to scroll. Pinch inward, hold briefly, move both fingers together, and lift to place a tile using OpenTile's existing gesture recognizer. Select **Resize** before touching the pad to resize instead. **Cancel** on the phone or Escape on the Mac cancels a preview.
+
+Build the Mac app from this checkout; Phone Pad is not included in the published release yet. Accessibility permission is required. Phone pairing works without enabling the built-in trackpad gestures.
+
+1. In `PhonePad/`, run `npm ci`, then `npm start`, and open the project in a matching Expo Go app on Android or iPhone. Expo's development QR loads the phone app; it does not pair the Mac.
+2. On the Mac, run `ngrok http http://127.0.0.1:8765`, or use another HTTPS tunnel that forwards WebSockets to that address. Choose **Pair Phone Pad…** in OpenTile and paste the tunnel's HTTPS URL.
+3. In the phone app, choose **Scan pairing QR** and scan the QR displayed by OpenTile. Reconnect uses the saved pairing while that Mac session remains available.
+
+To open the pairing QR immediately when launching a packaged Mac build, run `OPENTILE_PHONE_PAD_ENDPOINT=https://your-tunnel.ngrok-free.app .build/package/OpenTile.app/Contents/MacOS/OpenTile` from the repository root. Quit any running OpenTile first. This uses the same Accessibility requirement and pairing transport as the menu command.
+
+This tunnel connection works on the same Wi-Fi and across networks. It requires internet access and a tunnel provider; automatic LAN discovery and a direct offline connection are not implemented. For phone-app development across networks, `npx expo start --tunnel` can separately tunnel the Expo development server. A packaged phone app does not need that development server. `npm run android` builds and runs with an installed Android SDK; `npm run ios` requires full Xcode and appropriate signing. No APK or App Store build is distributed yet.
+
+The pairing QR contains a random control key. Input and responses are authenticated and encrypted with AES-GCM in addition to the tunnel's TLS connection. Keep the QR private. Pairing is saved in the phone's secure storage; the Mac keeps its key only for the current pairing session. **Stop Phone Pad**, a new pairing, pausing gestures, Mac sleep, or quitting revokes it. Backgrounding the phone, losing Accessibility permission, delayed input, or a lost connection cancels the active preview and requires reconnecting. Scrolling stays scrolling until every finger lifts, and an interrupted pinch cannot commit a delayed release.
+
+Android pairing has been exercised on a physical phone. iPhone camera and permission flows, broader gesture and device coverage, and tunnel latency still need manual testing. This remote-control preview has not had a dedicated security audit.
+
 ## Your desktop, your choice
 
 ### Split menu bar
