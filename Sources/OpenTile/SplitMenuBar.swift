@@ -31,14 +31,14 @@ final class BarPanel: NSPanel {
     }
 }
 
-/// Keep the bar quiet at rest, with just enough depth to separate it from the desktop.
-private final class SplitBarSurface: NSView {
+/// Keep controls legible while letting the lower edge fade into the wallpaper.
+final class SplitBarSurface: NSView {
     override func draw(_ dirtyRect: NSRect) {
-        NSGradient(starting: NSColor(calibratedWhite: 0.105, alpha: 1),
-                   ending: NSColor(calibratedWhite: 0.055, alpha: 1))?
+        NSGradient(colorsAndLocations:
+            (NSColor(calibratedWhite: 0.105, alpha: 0), 0),
+            (NSColor(calibratedWhite: 0.08, alpha: 0.96), 0.3),
+            (NSColor(calibratedWhite: 0.055, alpha: 1), 1))?
             .draw(in: bounds, angle: 90)
-        NSColor.white.withAlphaComponent(0.11).setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 }
 
@@ -554,8 +554,8 @@ final class WorkspaceBarButton: NSButton {
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenNone]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.isOpaque = true
-        panel.backgroundColor = NSColor(calibratedWhite: 0.055, alpha: 1)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.animationBehavior = .none
         panel.contentView = SplitBarSurface(frame: panel.contentView!.bounds)

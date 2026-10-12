@@ -68,7 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var item: NSStatusItem!
     private var toggleItem: NSMenuItem!
     private var statusItem: NSMenuItem!
-    private var enabled = false
+    private let gestureActivation = GestureActivation()
+    private var enabled: Bool { gestureActivation.isEnabled }
     private var committing = false {
         didSet { workspaceRequests.isBusy = committing }
     }
@@ -187,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         workspaceRequests.isReady = true
         if permissions.shouldShowOnLaunch { showPermissionSetup() }
+        if gestureActivation.shouldRestore { enableGestures() }
         if let endpointText = ProcessInfo.processInfo.environment["OPENTILE_PHONE_PAD_ENDPOINT"] {
             guard let endpoint = PhonePadPairing.endpoint(endpointText) else {
                 status("OPENTILE_PHONE_PAD_ENDPOINT must be an HTTPS tunnel address")
@@ -202,24 +204,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggle() {
-        if enabled { disable(); return }
-        guard AXIsProcessTrusted() else {
-            status("Accessibility is off — open Permission Setup from the menu")
-            return
-        }
-        guard AeroSpace.locate() != nil else { status("Bundled window manager CLI is missing — rebuild OpenTile"); return }
-        guard bridge.start(onFrames: { [weak self] in self?.wakeGestureProcessing() }) else { status("No supported trackpad found"); return }
+        if enabled { disable(rememberPause: true); return }
+        enableGestures()
+    }
+
+    private func enableGestures() {
+        guard gestureActivation.enable(start: {
+            guard AXIsProcessTrusted() else {
+                status("Accessibility is off — open Permission Setup from the menu")
+                return false
+            }
+            guard AeroSpace.locate() != nil else { status("Bundled window manager CLI is missing — rebuild OpenTile"); return false }
+            guard bridge.start(onFrames: { [weak self] in self?.wakeGestureProcessing() }) else { status("No supported trackpad found"); return false }
+            return true
+        }) else { return }
         recognizer = GestureRecognizer()
-        enabled = true
         wakeGestureProcessing()
         toggleItem.title = "Pause Gestures"
         status("Pinch and hold to move · Option + pinch to resize")
     }
 
-    private func disable() {
+    private func disable(rememberPause: Bool = false) {
         phonePad.stop()
         cancel()
-        enabled = false
+        gestureActivation.disable(rememberPause: rememberPause)
         polling.stop()
         bridge.stop()
         drawing.stop()

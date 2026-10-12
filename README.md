@@ -56,6 +56,8 @@ Workspace menus and controls work while gestures are paused. Drawing, menu, and 
 
 Build the Mac app from this checkout; Phone Pad is not included in the published release yet. Accessibility permission is required. Phone pairing works without enabling the built-in trackpad gestures.
 
+OpenTile remembers your last successful **Enable Gestures** choice and restores Mac trackpad and keyboard-modifier gestures when reopened, including for a new pairing QR. **Pause Gestures** stays paused across launches. Restoring gestures still requires Accessibility permission and a supported trackpad; enabling once in this version saves the choice.
+
 1. In `PhonePad/`, run `npm ci`, then `npm start`, and open the project in a matching Expo Go app on Android or iPhone. Expo's development QR loads the phone app; it does not pair the Mac.
 2. On the Mac, run `ngrok http http://127.0.0.1:8765`, or use another HTTPS tunnel that forwards WebSockets to that address. Choose **Pair Phone Pad…** in OpenTile and paste the tunnel's HTTPS URL.
 3. In the phone app, choose **Scan pairing QR** and scan the QR displayed by OpenTile. Reconnect uses the saved pairing while that Mac session remains available.
@@ -72,7 +74,7 @@ Android pairing has been exercised on a physical phone. iPhone camera and permis
 
 ### Split menu bar
 
-Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
+Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. Its translucent lower edge lets the wallpaper's colors show through naturally. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
 
 Click network, sound, battery, or the clock to see a compact status dropdown with a link to the related macOS settings. Values refresh while each dropdown is open. The OpenTile control opens its usual menu.
 The status controls use subtle hover and pressed capsules, and each dropdown shows a neutral activity, level, or date visual alongside its current values. The selected workspace capsule glides to the next workspace and scrolls it into view; Reduce Motion makes that change immediate.
