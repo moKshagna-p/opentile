@@ -74,7 +74,7 @@ Android pairing has been exercised on a physical phone. iPhone camera and permis
 
 ### Split menu bar
 
-Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
+Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. Its translucent lower edge lets the wallpaper's colors show through naturally. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
 
 Click network, sound, battery, or the clock to see a compact status dropdown with a link to the related macOS settings. Values refresh while each dropdown is open. The OpenTile control opens its usual menu.
 The status controls use subtle hover and pressed capsules, and each dropdown shows a neutral activity, level, or date visual alongside its current values. The selected workspace capsule glides to the next workspace and scrolls it into view; Reduce Motion makes that change immediate.

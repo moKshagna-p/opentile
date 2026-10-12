@@ -4,6 +4,27 @@ import Testing
 @testable import OpenTile
 
 struct SplitMenuBarTests {
+    @Test @MainActor func barSurfaceFadesIntoWallpaperAtBottom() throws {
+        let surface = SplitBarSurface(frame: NSRect(x: 0, y: 0, width: 80, height: 28))
+        let bitmap = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 80, pixelsHigh: 28,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap))
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = context
+        surface.draw(surface.bounds)
+
+        // Bitmap rows run top to bottom; AppKit's unflipped view runs bottom to top.
+        let bottom = try #require(bitmap.colorAt(x: 40, y: 27))
+        let behindIcons = try #require(bitmap.colorAt(x: 40, y: 13))
+        let top = try #require(bitmap.colorAt(x: 40, y: 0))
+        #expect(bottom.alphaComponent < 0.08)
+        #expect(behindIcons.alphaComponent > 0.95)
+        #expect(top.alphaComponent > 0.95)
+    }
+
     @Test @MainActor func statusDropdownKeepsDetailsAndSettingsInNativeMenu() {
         let menu = SplitBarDropdown.make(
             title: "NETWORK", subtitle: "Wi-Fi connection", symbol: "wifi",
