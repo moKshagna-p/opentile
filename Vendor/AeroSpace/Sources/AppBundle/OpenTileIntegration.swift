@@ -1,6 +1,8 @@
 import AppKit
 import Common
 
+@MainActor public var openTileWorkspaceCommandHandler: ((String) -> Bool)?
+
 @MainActor public func stopOpenTileEngine() {
     terminationHandler?.beforeTermination()
 }

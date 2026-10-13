@@ -6,6 +6,7 @@ struct ExecAndForgetCommand: Command {
     /*conforms*/ let shouldResetClosedWindowsCache = false
 
     func run(_ env: CmdEnv, _ io: CmdIo) -> BinaryExitCode {
+        if openTileWorkspaceCommandHandler?(args.bashScript) == true { return .succ }
         // todo shall exec-and-forget fork exec session?
         // It doesn't throw if exit code is non-zero
         let process = Process()

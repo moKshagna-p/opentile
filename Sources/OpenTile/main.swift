@@ -114,6 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
+        openTileWorkspaceCommandHandler = { [weak self] script in
+            guard let self, let request = WorkspaceRequest(openCommand: script) else { return false }
+            self.workspaceRequests.append(request)
+            return true
+        }
         initAppBundle(promptForAccessibility: false)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "OpenTile")

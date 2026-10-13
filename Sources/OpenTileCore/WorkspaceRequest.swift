@@ -19,6 +19,17 @@ public enum WorkspaceRequest: Equatable {
         } else { return nil }
     }
 
+    /// Recognize only the old shortcut launcher, leaving other shell commands untouched.
+    public init?(openCommand: String) {
+        let pattern = #"^\s*open\s+-g\s+(?:-a\s+"[^"$`\\\r\n]*/OpenTile\.app"|-b\s+com\.mokshagna\.opentile)\s+"(opentile://workspace\?[^"$`\\\r\n]*)"\s*$"#
+        guard let match = openCommand.range(of: pattern, options: .regularExpression),
+              match == openCommand.startIndex..<openCommand.endIndex,
+              let start = openCommand.range(of: "\"opentile://workspace?"),
+              let end = openCommand[start.upperBound...].firstIndex(of: "\""),
+              let url = URL(string: String(openCommand[openCommand.index(after: start.lowerBound)..<end])) else { return nil }
+        self.init(url: url)
+    }
+
     public var arguments: [String] {
         switch self {
         case .workspace(let name): return ["workspace", name]

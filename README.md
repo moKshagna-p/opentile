@@ -30,7 +30,7 @@ You'll need an **Apple Silicon Mac running macOS 14 or later**. Gesture controls
 
 **Accessibility** lets OpenTile move and resize windows. Optional **Screen Recording** permission enables workspace animation snapshots; images stay in memory, and switching still works without that permission. You can reopen **Permission Setup…** from the menu at any time. macOS may require reopening the app after a permission change.
 
-The current v0.6.4 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
+The current v0.6.5 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
 
 ## Everyday controls
 
@@ -81,6 +81,8 @@ The network dropdown also shows up to three apps or processes with the most curr
 The status controls use subtle hover and pressed capsules, and each dropdown shows a neutral activity, level, or date visual alongside its current values. The selected workspace capsule glides to the next workspace and scrolls it into view; Reduce Motion makes that change immediate.
 
 Set the native macOS menu bar to automatically hide in System Settings first. OpenTile leaves that preference to you, and the native menu remains accessible at the top edge.
+
+Workspace keyboard shortcuts configured as `open -g -a "…/OpenTile.app" "opentile://workspace?…"` are handled by the running app, so an old development-build path does not break switching after an update. Number, letter, and back-and-forth requests use the same queue as the workspace menu and drawing gestures.
 
 Optional integrations:
 

@@ -50,6 +50,17 @@ struct EmbeddedEngineTests {
         }
     }
 
+    @Test @MainActor
+    func legacyWorkspaceShortcutUsesRunningAppInsteadOfLaunchingStalePath() async {
+        var received: String?
+        openTileWorkspaceCommandHandler = { received = $0; return true }
+        defer { openTileWorkspaceCommandHandler = nil }
+        let script = #"open -g -a "/missing/OpenTile.app" "opentile://workspace?name=M""#
+        let result = await ExecAndForgetCommand(args: .init(bashScript: script)).run(.defaultEnv, .emptyStdin)
+        #expect(result.exitCode.rawValue == 0)
+        #expect(received == script)
+    }
+
     @Test
     func testTransportOnlyUsesSiblingCLI() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
