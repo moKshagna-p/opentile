@@ -2,11 +2,11 @@
   "expo": {
     "name": "OpenTile Pad",
     "slug": "opentile-pad",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "opentile-pad",
-    "android": { "package": "com.mokshagna.opentile.pad", "versionCode": 2 },
+    "android": { "package": "com.mokshagna.opentile.pad", "versionCode": 3 },
     "ios": { "bundleIdentifier": "com.mokshagna.opentile.pad", "supportsTablet": true },
     "plugins": [
       ["expo-camera", { "cameraPermission": "Scan the pairing QR shown by OpenTile on your Mac.", "microphonePermission": false, "recordAudioAndroid": false }],

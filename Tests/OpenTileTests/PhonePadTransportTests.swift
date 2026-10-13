@@ -37,10 +37,10 @@ private final class PhonePadClient {
         }
     }
 
-    func send(_ type: String, contacts: [PhonePadPacket.Touch]? = nil, key: SymmetricKey? = nil) throws {
+    func send(_ type: String, contacts: [PhonePadPacket.Touch]? = nil, key: SymmetricKey? = nil, time: Double? = nil) throws {
         let pairing = try #require(pairing)
         let packet = PhonePadPacket(v: 1, session: session, direction: "phone", seq: sequence, type: type,
-                                    time: ProcessInfo.processInfo.systemUptime, contacts: contacts)
+                                    time: time ?? ProcessInfo.processInfo.systemUptime, contacts: contacts)
         sequence += 1
         let sealed = try AES.GCM.seal(JSONEncoder().encode(packet), using: key ?? SymmetricKey(data: Data(base64Encoded: pairing.key)!))
         let context = NWConnection.ContentContext(identifier: "test", metadata: [NWProtocolWebSocket.Metadata(opcode: .text)])
@@ -95,7 +95,7 @@ struct PhonePadTransportTests {
         #expect(disconnects == 1)
     }
 
-    @Test func lostTouchFramesCancelBeforeDelayedRelease() async throws {
+    @Test func lostTouchFramesCancelWithoutDisconnecting() async throws {
         let pad = PhonePad(isTrusted: { true })
         let client = PhonePadClient()
         defer { pad.stop(); client.close() }
@@ -106,11 +106,60 @@ struct PhonePadTransportTests {
         try await pair(pad, client)
         try client.send("frame", contacts: [.init(id: 1, x: 0.5, y: 0.5)])
         #expect(await waitFor { pad.hasTouches })
-        #expect(await waitFor { disconnected })
-        #expect(!pad.isConnected && !pad.hasTouches && events.isEmpty)
+        #expect(await waitFor { events.contains(.gesture(.cancelled)) })
+        #expect(pad.isConnected && !pad.hasTouches && !disconnected)
+        // Fresh input racing cancellation feedback stays blocked until a lift.
+        try client.send("frame", contacts: [.init(id: 2, x: 0.5, y: 0.5)])
         try client.send("frame", contacts: [])
-        try await Task.sleep(for: .milliseconds(30))
-        #expect(events.isEmpty)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(events == [.gesture(.cancelled)])
+        try client.send("frame", contacts: [.init(id: 3, x: 0.5, y: 0.5)])
+        try client.send("frame", contacts: [])
+        #expect(await waitFor { events.contains(.click) })
+        #expect(events == [.gesture(.cancelled), .click])
+    }
+
+    @Test func staleAuthenticatedReleaseCancelsButFreshInputCanResume() async throws {
+        let pad = PhonePad(isTrusted: { true })
+        let client = PhonePadClient()
+        defer { pad.stop(); client.close() }
+        var events: [PhonePadEvent] = []
+        pad.onEvent = { events.append($0) }
+        try await pair(pad, client)
+        let touchTime = ProcessInfo.processInfo.systemUptime
+        try client.send("frame", contacts: [.init(id: 1, x: 0.5, y: 0.5)], time: touchTime)
+        #expect(await waitFor { pad.hasTouches })
+        try await Task.sleep(for: .milliseconds(500))
+        for index in 1...5 { try client.send("frame", contacts: [], time: touchTime + Double(index) * 0.01) }
+        try client.send("frame", contacts: [])
+        try client.send("frame", contacts: [.init(id: 2, x: 0.5, y: 0.5)])
+        try client.send("frame", contacts: [])
+        #expect(await waitFor { events.contains(.click) })
+        #expect(pad.isConnected)
+        #expect(events.filter { $0 == .click }.count == 1)
+        #expect(events.filter { $0 == .gesture(.cancelled) }.count == 1)
+        #expect(!events.contains(.gesture(.released)))
+    }
+
+    @Test func briefIdleTunnelDelayDoesNotDisconnect() async throws {
+        let pad = PhonePad(isTrusted: { true })
+        let client = PhonePadClient()
+        defer { pad.stop(); client.close() }
+        try await pair(pad, client)
+        try await Task.sleep(for: .milliseconds(3500))
+        #expect(pad.isConnected)
+        try client.send("ping")
+        #expect(await waitFor { client.messages.count >= 3 })
+    }
+
+    @Test func deadAuthenticatedConnectionStillTimesOut() async throws {
+        let pad = PhonePad(isTrusted: { true })
+        let client = PhonePadClient()
+        defer { pad.stop(); client.close() }
+        try await pair(pad, client)
+        try await Task.sleep(for: .milliseconds(10_500))
+        #expect(await waitFor { !pad.isConnected })
+        #expect(!pad.hasTouches)
     }
 
     @Test func permissionRevocationDisconnectsIdlePhone() async throws {
@@ -123,7 +172,7 @@ struct PhonePadTransportTests {
         #expect(await waitFor { !pad.isConnected })
     }
 
-    @Test func interruptedActivePinchDisconnectsWithoutRelease() async throws {
+    @Test func interruptedActivePinchCancelsWithoutReleaseOrDisconnect() async throws {
         let pad = PhonePad(isTrusted: { true })
         let client = PhonePadClient()
         defer { pad.stop(); client.close() }
@@ -139,7 +188,8 @@ struct PhonePadTransportTests {
             try await Task.sleep(for: .milliseconds(40))
         }
         #expect(events.contains(.gesture(.began(CGPoint(x: 0.5, y: 0.5)))))
-        #expect(await waitFor { disconnected })
+        #expect(await waitFor { events.contains(.gesture(.cancelled)) })
+        #expect(pad.isConnected && !disconnected && !pad.hasTouches)
         try client.send("frame", contacts: [])
         try await Task.sleep(for: .milliseconds(30))
         #expect(!events.contains(.gesture(.released)))

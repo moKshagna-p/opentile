@@ -55,6 +55,30 @@ struct SplitMenuBarTests {
         #expect(menu.items[5].target === NSApplication.shared)
     }
 
+    @Test @MainActor func networkActivityShowsAtMostThreeProcessesAndEmptyState() {
+        let menu = SplitBarDropdown.make(
+            title: "NETWORK", subtitle: "Wi-Fi connection", symbol: "wifi",
+            value: "Connected", visual: .activity([]),
+            details: [.init(title: "Download", value: "0 B/s", symbol: "arrow.down"),
+                      .init(title: "Upload", value: "0 B/s", symbol: "arrow.up")],
+            settingsTitle: "Open Network Settings…",
+            settingsAction: #selector(NSApplication.terminate(_:)), target: NSApplication.shared)
+        let activity = SplitBarNetworkActivity(menu: menu)
+        #expect(menu.items[4].isSeparatorItem)
+        #expect(menu.items[5].title == "ACTIVE PROCESSES")
+        #expect(menu.items[6].view?.accessibilityLabel() == "Sampling…, ")
+        #expect(menu.items[7].isHidden)
+        activity.update((1...4).map { NetworkProcessUsage(name: "App \($0)", bytesPerSecond: Double($0)) })
+        #expect(menu.items[6].view?.accessibilityLabel() == "App 1, 1 B/s")
+        #expect(menu.items[8].view?.accessibilityLabel() == "App 3, 3 B/s")
+        #expect(menu.items[9].isSeparatorItem)
+        #expect(menu.items[10].title == "Open Network Settings…")
+        activity.update([])
+        #expect(menu.items[6].view?.accessibilityLabel() == "No activity, ")
+        #expect(menu.items[7].isHidden)
+        #expect(menu.items[8].isHidden)
+    }
+
     @Test @MainActor func workspaceIconsRemainUnclippedAndClickable() {
         let button = WorkspaceBarButton(title: "1", target: nil, action: nil)
         button.font = .monospacedSystemFont(ofSize: 11, weight: .medium)

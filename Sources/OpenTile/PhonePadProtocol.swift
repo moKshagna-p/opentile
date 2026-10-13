@@ -37,7 +37,7 @@ struct PhonePadPacket: Codable {
 /// AES-GCM authenticates input end-to-end, including through a TLS-terminating tunnel.
 /// Fresh session challenges and increasing counters reject replay and reflected responses.
 struct PhonePadProtocol {
-    enum Failure: Error { case invalid }
+    enum Failure: Error { case invalid, stale }
     let key: SymmetricKey
     let session: String
     private(set) var authenticated = false
@@ -62,17 +62,19 @@ struct PhonePadProtocol {
             guard packet.type == "hello", packet.seq == 0 else { throw Failure.invalid }
             clockOffset = now - packet.time
         } else {
-            // Never apply a delayed release after the preview has timed out.
-            guard abs(now - packet.time - clockOffset) < 0.4,
-                  ["frame", "cancel", "ping"].contains(packet.type) else { throw Failure.invalid }
+            guard ["frame", "cancel", "ping"].contains(packet.type) else { throw Failure.invalid }
         }
         if packet.type == "frame" {
             guard let contacts = packet.contacts, contacts.count <= 2,
                   contacts.allSatisfy({ $0.id >= 0 && $0.id <= 1_000_000 && $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) }),
                   Set(contacts.map(\.id)).count == contacts.count else { throw Failure.invalid }
         }
+        // Consume valid counters even when input is stale, so it cannot be
+        // replayed later. A delayed release must never commit a timed-out preview.
+        let stale = authenticated && abs(now - packet.time - clockOffset) >= 0.4
         received = packet.seq
         lastTime = packet.time
+        if stale { throw Failure.stale }
         authenticated = true
         return packet
     }

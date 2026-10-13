@@ -15,12 +15,13 @@ export class PadConnection {
   private closed = false;
   private queue: Pending[] = [];
   private sending = false;
+  private inFlight?: Pending;
   private sendGeneration = 0;
   private receiving = Promise.resolve();
   private incoming = 0;
   private heartbeat?: ReturnType<typeof setInterval>;
   private lastResponse = now();
-  constructor(private pairing: Pairing, private onStatus: (message: string, ready: boolean) => void, private onFeedback: (packet: Packet) => void) {}
+  constructor(private pairing: Pairing, private onStatus: (message: string, ready: boolean) => void, private onFeedback: (packet: Packet) => void, private onInputReset: () => void = () => {}) {}
 
   async connect() {
     try {
@@ -42,7 +43,7 @@ export class PadConnection {
       socket.onerror = () => this.close('Cannot reach your Mac. Check the tunnel and reconnect.');
       socket.onclose = () => this.close('Disconnected. Reconnect when your Mac is ready.');
       this.heartbeat = setInterval(() => {
-        if (now() - this.lastResponse > (this.ready ? 3 : 8)) this.close('Connection timed out. Reconnect.');
+        if (now() - this.lastResponse > (this.ready ? 10 : 8)) this.close('Connection timed out. Reconnect.');
         else if (this.ready) this.enqueue({ type: 'ping', time: now() });
       }, 1000);
     } catch { this.close('Pairing could not be opened. Scan a new QR on your Mac.'); }
@@ -69,6 +70,13 @@ export class PadConnection {
       this.ready = true;
       this.onStatus('Connected to your Mac', true);
     }
+    if (packet.type === 'cancelled') {
+      // A release may itself have been delayed. Acknowledge the reset even if
+      // the UI stopped pumping after lift, and discard movement still encrypting.
+      this.sendGeneration++;
+      this.queue = [];
+      this.frame([], false);
+    }
     this.onFeedback(packet);
   }
 
@@ -87,8 +95,18 @@ export class PadConnection {
 
   private enqueue(message: Pending) {
     if (this.closed || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    if (this.queue.length >= 8 || this.socket.bufferedAmount > 16384) { this.close('Connection is too slow. Reconnect.'); return; }
-    this.queue.push(message);
+    if (this.socket.bufferedAmount > 16384) { this.close('Connection is too slow. Reconnect.'); return; }
+    const last = this.queue[this.queue.length - 1];
+    const previous = this.queue[this.queue.length - 2] ?? this.inFlight;
+    const sameContacts = (a: Pending | undefined, b: Pending) => a?.type === 'frame' && b.type === 'frame' &&
+      a.resize === b.resize && a.contacts?.length === b.contacts?.length &&
+      a.contacts!.every(touch => b.contacts!.some(other => other.id === touch.id));
+    // Keep contact transitions (including lifts and pinch starts), but replace
+    // redundant movement with the latest sample while native encryption runs.
+    if (last && ((sameContacts(last, message) && sameContacts(previous, last)) ||
+        (last.type === 'ping' && message.type === 'ping'))) this.queue[this.queue.length - 1] = message;
+    else this.queue.push(message);
+    if (this.queue.length > 8) { this.close('Connection is too slow. Reconnect.'); return; }
     void this.flush();
   }
 
@@ -98,18 +116,26 @@ export class PadConnection {
     try {
       while (this.queue.length && !this.closed) {
         const next = this.queue.shift()!;
+        this.inFlight = next;
         const generation = this.sendGeneration;
-        if (now() - next.time > 0.25) throw new Error('Delayed input');
+        if (next.type === 'frame' && now() - next.time > 0.25) { this.resetDelayedInput(); continue; }
         const packet: Packet = { v: 1, session: this.session, direction: 'phone', seq: this.sequence++, ...next };
         const sealed = await aesEncryptAsync(new TextEncoder().encode(JSON.stringify(packet)), this.key);
         const data = await sealed.combined('base64');
         if (this.closed) return;
         if (generation !== this.sendGeneration) continue;
-        if (now() - next.time > 0.25) throw new Error('Delayed input');
+        if (next.type === 'frame' && now() - next.time > 0.25) { this.resetDelayedInput(); continue; }
         this.socket?.send(data);
       }
     } catch { this.close('Connection is too slow. Lift your fingers and reconnect.'); }
-    finally { this.sending = false; }
+    finally { this.sending = false; this.inFlight = undefined; }
+  }
+
+  private resetDelayedInput() {
+    this.cancel();
+    if (this.closed) return;
+    this.onInputReset();
+    this.onStatus('Connected — delay cancelled input. Lift all fingers to continue.', true);
   }
 
   close(message = 'Disconnected') {

@@ -205,6 +205,8 @@ private final class SplitBarMetricRow: NSView {
 
         label.frame = NSRect(x: 45, y: 5, width: 104, height: 18)
         label.font = .systemFont(ofSize: 12)
+        label.lineBreakMode = .byTruncatingTail
+        label.toolTip = title
         addSubview(label)
 
         metric.frame = NSRect(x: 151, y: 5, width: 107, height: 18)
@@ -218,12 +220,50 @@ private final class SplitBarMetricRow: NSView {
 
     func update(title: String, value: String) {
         label.stringValue = title
+        label.toolTip = title
         metric.stringValue = value
         metric.toolTip = value
         setAccessibilityLabel("\(title), \(value)")
     }
 
     required init?(coder: NSCoder) { nil }
+}
+
+@MainActor final class SplitBarNetworkActivity {
+    private let rows: [NSMenuItem]
+
+    init(menu: NSMenu) {
+        let insertionIndex = menu.items.count - 2
+        menu.insertItem(.separator(), at: insertionIndex)
+        let heading = NSMenuItem(title: "ACTIVE PROCESSES", action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        menu.insertItem(heading, at: insertionIndex + 1)
+        rows = (0..<3).map { index in
+            let item = NSMenuItem()
+            item.view = SplitBarMetricRow(title: index == 0 ? "Sampling…" : "", value: "", symbol: "app")
+            item.isHidden = index != 0
+            menu.insertItem(item, at: insertionIndex + 2 + index)
+            return item
+        }
+    }
+
+    func update(_ samples: [NetworkProcessUsage]?) {
+        let visible = samples?.prefix(3).map {
+            (name: $0.name, rate: NetworkTraffic.format($0.bytesPerSecond))
+        } ?? []
+        for (index, item) in rows.enumerated() {
+            if index < visible.count {
+                item.isHidden = false
+                (item.view as? SplitBarMetricRow)?.update(title: visible[index].name, value: visible[index].rate)
+            } else if index == 0 {
+                item.isHidden = false
+                (item.view as? SplitBarMetricRow)?.update(
+                    title: samples == nil ? "Unavailable" : "No activity", value: "")
+            } else {
+                item.isHidden = true
+            }
+        }
+    }
 }
 
 enum SplitBarDropdown {
@@ -422,6 +462,7 @@ final class WorkspaceBarButton: NSButton {
     private var timer: Timer?
     private var trafficTimer: Timer?
     private var traffic = NetworkTraffic()
+    private let processTraffic = NetworkProcessTraffic()
     private var trafficText = "↓ 0 B/s  ↑ 0 B/s"
     private var trafficButtons: [NSButton] = []
     private var network: NWPathMonitor?
@@ -710,6 +751,7 @@ final class WorkspaceBarButton: NSButton {
         timer?.invalidate(); timer = nil
         network?.cancel(); network = nil
         trafficTimer?.invalidate(); trafficTimer = nil
+        processTraffic.stop()
         traffic = NetworkTraffic()
         trafficHistory.removeAll()
         trafficButtons.removeAll()
@@ -846,6 +888,9 @@ final class WorkspaceBarButton: NSButton {
             details: [.init(title: "Download", value: downloadRate, symbol: "arrow.down"),
                       .init(title: "Upload", value: uploadRate, symbol: "arrow.up")],
             settingsTitle: "Open Network Settings…", settingsAction: #selector(networkSettings), target: self)
+        let activity = SplitBarNetworkActivity(menu: menu)
+        processTraffic.start { activity.update($0) }
+        defer { processTraffic.stop() }
         showStatus(menu, from: sender) { [weak self] in
             guard let self else { return }
             let subtitle = self.wifi ? "Wi-Fi connection" : (self.networkConnected ? "Wired connection" : "Check your connection")

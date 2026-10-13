@@ -30,7 +30,7 @@ You'll need an **Apple Silicon Mac running macOS 14 or later**. Gesture controls
 
 **Accessibility** lets OpenTile move and resize windows. Optional **Screen Recording** permission enables workspace animation snapshots; images stay in memory, and switching still works without that permission. You can reopen **Permission Setup…** from the menu at any time. macOS may require reopening the app after a permission change.
 
-The current v0.6.3 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
+The current v0.6.4 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
 
 ## Everyday controls
 
@@ -66,7 +66,7 @@ To open the pairing QR immediately when launching a packaged Mac build, run `OPE
 
 This tunnel connection works on the same Wi-Fi and across networks. It requires internet access and a tunnel provider; automatic LAN discovery and a direct offline connection are not implemented. For phone-app development across networks, `npx expo start --tunnel` can separately tunnel the Expo development server. A packaged phone app does not need that development server. `npm run android` builds and runs with an installed Android SDK; `npm run ios` requires full Xcode and appropriate signing. No APK or App Store build is distributed yet.
 
-The pairing QR contains a random control key. Input and responses are authenticated and encrypted with AES-GCM in addition to the tunnel's TLS connection. Keep the QR private. Pairing is saved in the phone's secure storage; the Mac keeps its key only for the current pairing session. **Stop Phone Pad**, a new pairing, pausing gestures, Mac sleep, or quitting revokes it. Backgrounding the phone, losing Accessibility permission, delayed input, or a lost connection cancels the active preview and requires reconnecting. Scrolling stays scrolling until every finger lifts, and an interrupted pinch cannot commit a delayed release.
+The pairing QR contains a random control key. Input and responses are authenticated and encrypted with AES-GCM in addition to the tunnel's TLS connection. Keep the QR private. Pairing is saved in the phone's secure storage; the Mac keeps its key only for the current pairing session. **Stop Phone Pad**, a new pairing, pausing gestures, Mac sleep, or quitting revokes it. Brief input delays cancel the active preview without dropping the pairing; lift all fingers to resume. The connection tolerates up to ten seconds without an authenticated heartbeat. Backgrounding the phone, losing Accessibility permission, or a lost connection cancels the active preview and requires reconnecting. Scrolling stays scrolling until every finger lifts, and an interrupted pinch cannot commit a delayed release.
 
 Android pairing has been exercised on a physical phone. iPhone camera and permission flows, broader gesture and device coverage, and tunnel latency still need manual testing. This remote-control preview has not had a dedicated security audit.
 
@@ -77,6 +77,7 @@ Android pairing has been exercised on a physical phone. iPhone camera and permis
 Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. Its translucent lower edge lets the wallpaper's colors show through naturally. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
 
 Click network, sound, battery, or the clock to see a compact status dropdown with a link to the related macOS settings. Values refresh while each dropdown is open. The OpenTile control opens its usual menu.
+The network dropdown also shows up to three apps or processes with the most current internet traffic, ranked by combined download and upload rate. It samples only while that dropdown is open; when traffic is idle, it shows **No activity**.
 The status controls use subtle hover and pressed capsules, and each dropdown shows a neutral activity, level, or date visual alongside its current values. The selected workspace capsule glides to the next workspace and scrolls it into view; Reduce Motion makes that change immediate.
 
 Set the native macOS menu bar to automatically hide in System Settings first. OpenTile leaves that preference to you, and the native menu remains accessible at the top edge.

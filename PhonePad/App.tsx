@@ -72,7 +72,7 @@ function Pad() {
       if (packet.type === 'armed') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       if (packet.type === 'cancelled') blocked.current = touches.current.length > 0;
       if (packet.message && packet.type !== 'pong') setHint(packet.message);
-    });
+    }, () => { if (connection.current === next) blocked.current = touches.current.length > 0; });
     connection.current = next;
     void next.connect();
   }

@@ -20,6 +20,7 @@ final class PhonePad: NSObject {
     private var connection: NWConnection?
     private var codec: PhonePadProtocol?
     private var input = PhonePadInput()
+    private var inputStalled = false
     private var timer: Timer?
     private var lastPacket = 0.0
     private var lastTouchFrame = 0.0
@@ -111,15 +112,17 @@ final class PhonePad: NSObject {
         pendingWrites = 0
         codec = PhonePadProtocol(key: key)
         input = PhonePadInput()
+        inputStalled = false
         acceptedAt = ProcessInfo.processInfo.systemUptime
         lastPacket = acceptedAt
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self, weak connection] _ in
             guard let self, let connection, self.connection === connection else { return }
             let now = ProcessInfo.processInfo.systemUptime
             if (!self.isConnected && now - self.acceptedAt > 5) ||
-                (self.isConnected && now - self.lastPacket > 3) ||
-                (self.hasTouches && now - self.lastTouchFrame > 0.4) || !self.isTrusted() {
+                (self.isConnected && now - self.lastPacket > 10) || !self.isTrusted() {
                 self.disconnect(connection)
+            } else if self.hasTouches && now - self.lastTouchFrame > 0.4 {
+                self.cancelStalledInput()
             }
         }
         self.timer = timer
@@ -146,10 +149,10 @@ final class PhonePad: NSObject {
                   metadata.opcode == .text, let encrypted = Data(base64Encoded: data) else {
                 self.disconnect(connection); return
             }
+            guard self.isTrusted() else { self.disconnect(connection); return }
             do {
                 let packet = try self.codec!.open(encrypted, now: ProcessInfo.processInfo.systemUptime)
                 self.lastPacket = ProcessInfo.processInfo.systemUptime
-                guard self.isTrusted() else { self.disconnect(connection); return }
                 switch packet.type {
                 case "hello":
                     self.isConnected = true
@@ -163,6 +166,7 @@ final class PhonePad: NSObject {
                     for event in self.input.update(contacts, time: packet.time, resize: packet.resize ?? false) {
                         self.onEvent?(event)
                     }
+                    if contacts.isEmpty { self.inputStalled = false }
                 case "cancel":
                     self.input.cancel()
                     self.onEvent?(.gesture(.cancelled))
@@ -170,8 +174,20 @@ final class PhonePad: NSObject {
                 default: break
                 }
                 self.receive(connection)
+            } catch PhonePadProtocol.Failure.stale {
+                self.cancelStalledInput()
+                self.receive(connection)
             } catch { self.disconnect(connection) }
         }
+    }
+
+    private func cancelStalledInput() {
+        hasTouches = false
+        input.cancel()
+        guard !inputStalled else { return }
+        inputStalled = true
+        feedback("Input delayed — lift all fingers to continue", type: "cancelled")
+        onEvent?(.gesture(.cancelled))
     }
 
     func cancelInput() {

@@ -38,6 +38,20 @@ struct PhonePadProtocolTests {
         #expect(throws: (any Error).self) { try codec.open(damaged, now: 100.1) }
         #expect(throws: (any Error).self) { try codec.open(Data(repeating: 0, count: 16_385), now: 100.1) }
     }
+    @Test func staleAuthenticatedInputConsumesSequenceAndFreshInputCanResume() throws {
+        var codec = PhonePadProtocol(key: key, session: "session")
+        _ = try codec.open(encrypted(packet()), now: 100)
+        let stale = try encrypted(packet(type: "frame", seq: 1, time: 10.1, contacts: []))
+        #expect(throws: PhonePadProtocol.Failure.stale) { try codec.open(stale, now: 101) }
+        // Retrying the consumed counter is replay even if its time now looks fresh.
+        #expect(throws: PhonePadProtocol.Failure.invalid) { try codec.open(stale, now: 100.1) }
+        let fresh = try codec.open(encrypted(packet(type: "frame", seq: 2, time: 11.1, contacts: [])), now: 101.1)
+        #expect(fresh.seq == 2 && codec.authenticated)
+        let malformed = try encrypted(packet(type: "frame", seq: 3, time: 11.2,
+                                            contacts: [.init(id: 1, x: 2, y: 0)]))
+        #expect(throws: PhonePadProtocol.Failure.invalid) { try codec.open(malformed, now: 102) }
+    }
+
     @Test func authenticatedFeedbackHasIncreasingSequence() throws {
         var codec = PhonePadProtocol(key: key, session: "session")
         for sequence in 0..<3 {

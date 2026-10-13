@@ -37,9 +37,9 @@ async function waitFor(condition: () => boolean) {
 async function decode(data: string) {
   return JSON.parse((await aesDecryptAsync(AESSealedData.fromCombined(Buffer.from(data, 'base64')), key)).toString());
 }
-async function authenticated() {
+async function authenticated(onInputReset = () => {}, onFeedback = (_packet: unknown) => {}) {
   let ready = false;
-  const connection = new PadConnection(pairing, (_, value) => { ready = value; }, () => {});
+  const connection = new PadConnection(pairing, (_, value) => { ready = value; }, onFeedback, onInputReset);
   await connection.connect();
   const socket = Socket.latest;
   socket.message(JSON.stringify({ v: '1', session }));
@@ -94,4 +94,95 @@ test('backpressure disconnects before it accumulates input', async () => {
     assert.equal(socket.readyState, 3);
     assert.equal(socket.sent.length, 1);
   } finally { connection.close(); }
+});
+
+
+test('a burst of movement coalesces while encryption is busy instead of disconnecting', async () => {
+  const { connection, socket } = await authenticated();
+  const release = holdEncryption();
+  try {
+    for (let i = 0; i < 100; i++) connection.frame([{ id: 1, x: i / 100, y: 0.5 }], false);
+    assert.equal(socket.readyState, Socket.OPEN);
+    release();
+    await waitFor(() => socket.sent.length === 3);
+    const frames = await Promise.all(socket.sent.slice(1).map(decode));
+    assert.equal(frames[0].contacts[0].x, 0);
+    assert.equal(frames[1].contacts[0].x, 0.99);
+  } finally { release(); connection.close(); }
+});
+
+test('coalescing preserves finger lifts and new contact sequences', async () => {
+  const { connection, socket } = await authenticated();
+  const release = holdEncryption();
+  try {
+    connection.frame([{ id: 1, x: 0.1, y: 0.5 }], false);
+    connection.frame([{ id: 1, x: 0.2, y: 0.5 }], false);
+    connection.frame([], false);
+    connection.frame([{ id: 2, x: 0.3, y: 0.5 }], false);
+    connection.frame([{ id: 2, x: 0.4, y: 0.5 }], false);
+    release();
+    await waitFor(() => socket.sent.length === 6);
+    const frames = await Promise.all(socket.sent.slice(1).map(decode));
+    assert.deepEqual(frames.map(packet => packet.contacts), [
+      [{ id: 1, x: 0.1, y: 0.5 }], [{ id: 1, x: 0.2, y: 0.5 }], [],
+      [{ id: 2, x: 0.3, y: 0.5 }], [{ id: 2, x: 0.4, y: 0.5 }],
+    ]);
+  } finally { release(); connection.close(); }
+});
+
+
+test('a delayed encryption cancels input without closing the authenticated connection', async () => {
+  let resets = 0;
+  const { connection, socket } = await authenticated(() => { resets++; });
+  const release = holdEncryption();
+  try {
+    connection.frame([{ id: 1, x: 0.5, y: 0.5 }], false);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    release();
+    await waitFor(() => socket.sent.length >= 3 || socket.readyState === 3);
+    assert.equal(socket.readyState, Socket.OPEN);
+    const packets = await Promise.all(socket.sent.slice(1).map(decode));
+    assert.deepEqual(packets.map(packet => packet.type), ['cancel', 'frame']);
+    assert.deepEqual(packets[1].contacts, []);
+    assert.equal(resets, 1);
+  } finally { release(); connection.close(); }
+});
+
+test('heartbeat tolerates a brief tunnel gap but still closes a dead connection', async t => {
+  let time = 0;
+  t.mock.method(performance, 'now', () => time * 1000);
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const { connection, socket } = await authenticated();
+  try {
+    time = 4;
+    t.mock.timers.tick(4000);
+    assert.equal(socket.readyState, Socket.OPEN);
+    time = 11;
+    t.mock.timers.tick(7000);
+    assert.equal(socket.readyState, 3);
+  } finally { connection.close(); }
+});
+
+
+test('Mac cancellation acknowledges a fresh lift even when the phone pump has stopped', async () => {
+  let cancelled = false;
+  const { connection, socket } = await authenticated(() => {}, packet => {
+    if ((packet as { type: string }).type === 'cancelled') cancelled = true;
+  });
+  const release = holdEncryption();
+  try {
+    connection.frame([{ id: 1, x: 0.5, y: 0.5 }], false);
+    connection.frame([], false); // This release is still queued behind encryption.
+    const sealed = await aesEncryptAsync(new TextEncoder().encode(JSON.stringify({
+      v: 1, session, direction: 'mac', seq: 1, type: 'cancelled', time: 2,
+    })), key);
+    socket.message(await sealed.combined());
+    await waitFor(() => cancelled);
+    release();
+    await waitFor(() => socket.sent.length >= 2);
+    const packets = await Promise.all(socket.sent.slice(1).map(decode));
+    assert.deepEqual(packets.map(packet => packet.type), ['frame']);
+    assert.deepEqual(packets[0].contacts, []);
+    assert.equal(socket.readyState, Socket.OPEN);
+  } finally { release(); connection.close(); }
 });
