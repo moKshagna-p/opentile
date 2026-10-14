@@ -1,135 +1,157 @@
 # OpenTile
 
-**A little less window juggling. A little more flow.**
+A native macOS menu bar app for tiling windows and switching workspaces with trackpad gestures. The [AeroSpace](https://github.com/nikitabobko/AeroSpace) tiling engine is included.
 
-OpenTile is a native macOS menu bar app for tiling windows and moving between workspaces with trackpad gestures. Built on [AeroSpace](https://github.com/nikitabobko/AeroSpace), it brings gesture previews, drawn shortcuts, and a few optional desktop comforts into one app.
+[Download](https://github.com/moKshagna-p/opentile/releases) · [Contribute](CONTRIBUTING.md) · [Report an issue](https://github.com/moKshagna-p/opentile/issues)
 
-The tiling engine is included. Quit the standalone AeroSpace app before running OpenTile.
+## Install
 
-[Download](https://github.com/moKshagna-p/opentile/releases) · [Contributing](CONTRIBUTING.md) · [Report an issue](https://github.com/moKshagna-p/opentile/issues)
-
-## What it does
-
-- **Move and resize tiles** with two-finger gestures and a preview before you commit.
-- **Draw a symbol** to switch workspaces or open an app.
-- **See your workspaces** in the menu, or enable a split menu bar with app icons and system controls.
-- **Switch with a short vertical slide**, with support for multiple displays and Reduce Motion.
-- **Pick a wallpaper** from a searchable collection of your own images and videos.
-- **Make it yours** with an optional Apple Music player and CodexBar usage meters.
-
-OpenTile is experimental. Trackpad input uses Apple's private `MultitouchSupport` framework, and native macOS gestures may also respond. Feedback and small, focused contributions are welcome.
-
-## Getting started
-
-You'll need an **Apple Silicon Mac running macOS 14 or later**. Gesture controls require a built-in trackpad.
+Requires **Apple Silicon, macOS 14 or later**, and a built-in trackpad for gesture controls.
 
 1. Download the app ZIP from [Releases](https://github.com/moKshagna-p/opentile/releases).
 2. Extract it and move **OpenTile.app** to **Applications**.
 3. Quit standalone AeroSpace, then open OpenTile.
 4. Follow **Permission Setup**, then choose **Enable Gestures** from the menu bar.
 
-**Accessibility** lets OpenTile move and resize windows. Optional **Screen Recording** permission enables workspace animation snapshots; images stay in memory, and switching still works without that permission. You can reopen **Permission Setup…** from the menu at any time. macOS may require reopening the app after a permission change.
+**Accessibility** is required to move and resize windows. Optional **Screen Recording** enables workspace animation snapshots, which stay in memory. Switching works without it. Reopen **Permission Setup…** from the menu if needed; macOS may require restarting the app after permission changes.
 
-The current v0.6.5 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
+The v0.6.5 release is Apple Development signed and **not notarized**. Updates may require granting permissions again. See [signing details](RELEASING.md).
 
-## Everyday controls
+OpenTile is experimental and uses Apple's private `MultitouchSupport` framework. Native macOS gestures may also respond.
+
+## Controls
 
 Start with a focused tiled window.
 
-| Action | Gesture |
+| Action | Gesture or shortcut |
 | --- | --- |
-| Move or swap | Pinch inward with two fingers, hold briefly, then move them together. Release over a tile's center to swap, or near its edge to insert. |
-| Resize | Hold Option before touching the trackpad. Pinch inward to grow or spread outward to shrink, then lift to apply. |
-| Switch workspace | Hold Control–Option, draw a saved symbol with one finger, then release the keys. |
-| Open an app | Hold Option, draw a saved app symbol with one finger, then release Option. Two fingers still resize. |
-| Cancel | Press Escape before applying the gesture. |
+| Move or swap a tile | Pinch inward with two fingers, hold briefly, then move them together. Release over a tile's center to swap or near its edge to insert. |
+| Resize a tile | Hold **Option** before touching the trackpad. Pinch inward to grow or spread outward to shrink, then lift to apply. |
+| Switch workspace | Hold **Control–Option**, draw a saved symbol with one finger, then release the keys. |
+| Open an app | Hold **Option**, draw a saved app symbol with one finger, then release Option. Two fingers still resize. |
+| Choose wallpaper | **Control–Option–W** or **Choose Wallpaper…** in the menu. |
+| Cancel a gesture | **Escape** before applying it. |
 
-Choose **Draw to Switch Workspace → Teach a Workspace Symbol** to save three examples of a symbol. That menu also offers Control–Shift as an alternative shortcut.
+- Teach workspace symbols in **Draw to Switch Workspace → Teach a Workspace Symbol**, using three examples. That menu also offers **Control–Shift** as an alternative.
+- Teach app symbols in **Draw to Open App → Teach an App Symbol**. Apps come from the active Caps + O layer in `~/.config/karabiner/karabiner.json`; arbitrary Karabiner actions are not imported.
+- **Pause Gestures** and **Enable Gestures** persist across launches. Restoring gestures requires Accessibility permission and a supported trackpad. Workspace menus and commands remain usable while paused.
+- Workspace switches from drawing, menus, and OpenTile URLs use the slide transition. Direct engine commands and automatic app routing skip it; **Reduce Motion** disables animation.
 
-For app symbols, choose **Draw to Open App → Teach an App Symbol**. Available apps are imported from the active Caps + O layer in `~/.config/karabiner/karabiner.json`; arbitrary Karabiner actions are not imported.
+## Commands
 
-Workspace menus and controls work while gestures are paused. Drawing, menu, and `opentile://workspace?name=1` switches use OpenTile's transition; direct engine commands and automatic app routing do not. Reduce Motion skips the animation.
+### Build, test, and run
 
-## Phone Pad (development preview)
-
-`PhonePad/` contains a shared Android and iPhone app, with Android as the first target. It controls your Mac: slide one finger to move the cursor, tap to click, or slide two fingers to scroll. Pinch inward, hold briefly, move both fingers together, and lift to place a tile using OpenTile's existing gesture recognizer. Select **Resize** before touching the pad to resize instead. **Cancel** on the phone or Escape on the Mac cancels a preview.
-
-Build the Mac app from this checkout; Phone Pad is not included in the published release yet. Accessibility permission is required. Phone pairing works without enabling the built-in trackpad gestures.
-
-OpenTile remembers your last successful **Enable Gestures** choice and restores Mac trackpad and keyboard-modifier gestures when reopened, including for a new pairing QR. **Pause Gestures** stays paused across launches. Restoring gestures still requires Accessibility permission and a supported trackpad; enabling once in this version saves the choice.
-
-1. In `PhonePad/`, run `npm ci`, then `npm start`, and open the project in a matching Expo Go app on Android or iPhone. Expo's development QR loads the phone app; it does not pair the Mac.
-2. On the Mac, run `ngrok http http://127.0.0.1:8765`, or use another HTTPS tunnel that forwards WebSockets to that address. Choose **Pair Phone Pad…** in OpenTile and paste the tunnel's HTTPS URL.
-3. In the phone app, choose **Scan pairing QR** and scan the QR displayed by OpenTile. Reconnect uses the saved pairing while that Mac session remains available.
-
-To open the pairing QR immediately when launching a packaged Mac build, run `OPENTILE_PHONE_PAD_ENDPOINT=https://your-tunnel.ngrok-free.app .build/package/OpenTile.app/Contents/MacOS/OpenTile` from the repository root. Quit any running OpenTile first. This uses the same Accessibility requirement and pairing transport as the menu command.
-
-This tunnel connection works on the same Wi-Fi and across networks. It requires internet access and a tunnel provider; automatic LAN discovery and a direct offline connection are not implemented. For phone-app development across networks, `npx expo start --tunnel` can separately tunnel the Expo development server. A packaged phone app does not need that development server. `npm run android` builds and runs with an installed Android SDK; `npm run ios` requires full Xcode and appropriate signing. No APK or App Store build is distributed yet.
-
-The pairing QR contains a random control key. Input and responses are authenticated and encrypted with AES-GCM in addition to the tunnel's TLS connection. Keep the QR private. Pairing is saved in the phone's secure storage; the Mac keeps its key only for the current pairing session. **Stop Phone Pad**, a new pairing, pausing gestures, Mac sleep, or quitting revokes it. Brief input delays cancel the active preview without dropping the pairing; lift all fingers to resume. The connection tolerates up to ten seconds without an authenticated heartbeat. Backgrounding the phone, losing Accessibility permission, or a lost connection cancels the active preview and requires reconnecting. Scrolling stays scrolling until every finger lifts, and an interrupted pinch cannot commit a delayed release.
-
-Android pairing has been exercised on a physical phone. iPhone camera and permission flows, broader gesture and device coverage, and tunnel latency still need manual testing. This remote-control preview has not had a dedicated security audit.
-
-## Your desktop, your choice
-
-### Split menu bar
-
-Choose **Enable Split Menu Bar** for workspace buttons and app icons on the left, with network rates, sound, battery, clock, and OpenTile controls on the right. Its translucent lower edge lets the wallpaper's colors show through naturally. The bar reserves space above tiled windows and hides for engine fullscreen workspaces.
-
-Click network, sound, battery, or the clock to see a compact status dropdown with a link to the related macOS settings. Values refresh while each dropdown is open. The OpenTile control opens its usual menu.
-The network dropdown also shows up to three apps or processes with the most current internet traffic, ranked by combined download and upload rate. It samples only while that dropdown is open; when traffic is idle, it shows **No activity**.
-The status controls use subtle hover and pressed capsules, and each dropdown shows a neutral activity, level, or date visual alongside its current values. The selected workspace capsule glides to the next workspace and scrolls it into view; Reduce Motion makes that change immediate.
-
-Set the native macOS menu bar to automatically hide in System Settings first. OpenTile leaves that preference to you, and the native menu remains accessible at the top edge.
-
-Workspace keyboard shortcuts configured as `open -g -a "…/OpenTile.app" "opentile://workspace?…"` are handled by the running app, so an old development-build path does not break switching after an update. Number, letter, and back-and-forth requests use the same queue as the workspace menu and drawing gestures.
-
-Optional integrations:
-
-- **CodexBar:** install and configure [CodexBar](https://github.com/steipete/CodexBar), using a version with the `dashboard` command. The bar shows remaining usage; click for provider limits and reset times. Details follow CodexBar's used/remaining preference. Usage refreshes every three minutes while enabled.
-- **Apple Music:** enable **Show Apple Music Player**, then open Music and play a song. macOS asks permission for OpenTile to control Music. Click the artwork for track details and playback controls. If local artwork is unavailable, OpenTile sends the song title, artist, and album to Apple's iTunes catalog to find a matching cover.
-
-### Wallpapers
-
-Press **Control–Option–W** or choose **Choose Wallpaper…**. Type to filter, use the arrow keys to select, and press Return to apply to every connected display's current desktop. Escape clears the search, then closes the picker. **Command–O** opens your wallpaper folder.
-
-Add images or videos to `~/Pictures/Wallpapers`, including subfolders, and reopen the picker to refresh. Videos become still images stored in `~/Library/Application Support/OpenTile/Wallpaper Stills`; this isn't a live-video wallpaper player. The picker doesn't download wallpaper assets.
-
-The carousel and reveal are inspired by [Omarchy](https://github.com/omacom/omarchy/tree/quattro/shell/plugins). Wallpaper changes use native macOS APIs and don't need Screen Recording permission.
-
-## Configuration
-
-OpenTile checks these locations before falling back to your AeroSpace configuration:
-
-- `~/.opentile.toml`
-- `${XDG_CONFIG_HOME:-~/.config}/opentile/opentile.toml`
-
-Open or reload configuration from the menu. A separate AeroSpace installation isn't needed.
-
-Sparkle provides in-app updates. You can check manually or enable automatic checks from the menu.
-
-## Build and contribute
-
-Use **Swift 6.2 or later** with compatible Command Line Tools; full Xcode isn't required. From the repository root:
+Requires **Swift 6.2 or later** with compatible Command Line Tools; full Xcode is not required. Run these commands from the repository root:
 
 ```sh
+# Run automated tests
 scripts/test.sh
+
+# Run one test (replace the name with the test you need)
+scripts/test.sh --filter gesturePollingStopsAndCanResumeWithoutDuplicateTimers
+
+# Compile a release build
+swift build -c release
+
+# Package a local ad hoc signed app, ZIP, and checksum
 OPENTILE_SIGNING_IDENTITY="-" scripts/package.sh
+
+# Open the packaged app (quit any running OpenTile first)
+open .build/package/OpenTile.app
 ```
 
-The packaged app, ZIP, and checksum are written to `.build/package/`. Quit any running OpenTile instance before copying the app into Applications:
+Packaging writes to `.build/package/`. Ad hoc builds may require granting permissions again. For a signed build, set `OPENTILE_SIGNING_IDENTITY` to your own signing identity; if omitted, the script selects one only when exactly one is available. A bare `swift run` executable does not support in-app updates.
+
+To install your local build, quit OpenTile first, then run these commands. **This replaces the installed app.**
 
 ```sh
 ditto .build/package/OpenTile.app /Applications/OpenTile.app
 open /Applications/OpenTile.app
 ```
 
-`-` creates an ad hoc signed development build, which may require granting permissions again. Set `OPENTILE_SIGNING_IDENTITY` to your own signing identity for a signed build; if omitted, the script selects an identity only when exactly one is available. A bare `swift run` executable doesn't support in-app updates.
+### Switch workspaces from Terminal or a shortcut
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout, focused tests, and manual checks. [RELEASING.md](RELEASING.md) covers packaging and release signing. CI checks tests and builds; physical trackpad behavior, permissions, and visual smoothness still need testing on a Mac.
+With OpenTile installed, use these commands in Terminal or a keyboard shortcut:
 
-Found something odd? [Open an issue](https://github.com/moKshagna-p/opentile/issues) with your macOS version, OpenTile version, and steps to reproduce it. For gesture issues, include what you expected and what happened instead.
+```sh
+# Switch to workspace 1 (replace 1 with a number or letter)
+open -g -b com.mokshagna.opentile "opentile://workspace?name=1"
 
-## Thanks
+# Return to the previous workspace
+open -g -b com.mokshagna.opentile "opentile://workspace?action=back-and-forth"
+```
 
-OpenTile builds on [AeroSpace](https://github.com/nikitabobko/AeroSpace) and [Sparkle](https://sparkle-project.org/), with interface inspiration from [Omarchy](https://github.com/omacom/omarchy). Bundled dependency licenses ship with the app.
+## Configuration and extras
+
+OpenTile checks `~/.opentile.toml`, then `${XDG_CONFIG_HOME:-~/.config}/opentile/opentile.toml`, before falling back to your AeroSpace configuration. Open or reload it from the menu; a separate AeroSpace installation is not needed. In-app updates and automatic update checks are also available from the menu.
+
+- **Split menu bar:** choose **Enable Split Menu Bar** for workspace buttons, app icons, and network, sound, battery, and clock controls. Set the native menu bar to automatically hide in System Settings first; it remains accessible at the top edge. OpenTile reserves space above tiles and hides its bar for engine fullscreen workspaces. The network dropdown samples traffic only while open and shows up to three active apps or processes.
+- **Wallpapers:** add images or videos to `~/Pictures/Wallpapers`, including subfolders. Reopen the picker to refresh; type to search, use arrows to select, and press **Return** to apply across connected displays. **Escape** clears search, then closes; **Command–O** opens the folder. Videos become stills in `~/Library/Application Support/OpenTile/Wallpaper Stills`. Assets are not downloaded, and Screen Recording is not required.
+- **Apple Music:** enable **Show Apple Music Player**, play a song in Music, and grant permission to control it. Click artwork for playback controls. If local artwork is missing, OpenTile sends the title, artist, and album to Apple's iTunes catalog to find a cover.
+- **CodexBar:** install and configure [CodexBar](https://github.com/steipete/CodexBar) with support for its `dashboard` command. The bar shows remaining usage; click for limits and reset times. Details follow CodexBar's used/remaining preference. Usage refreshes every three minutes while enabled.
+
+## Phone Pad (development preview)
+
+Control the Mac cursor, clicks, scrolling, and tiling from an Android or iPhone app in [PhonePad/](PhonePad/). Build the Mac app from this checkout first; Phone Pad is not in the published release. Accessibility permission is required, but built-in trackpad gestures do not need to be enabled.
+
+1. Start the phone development app:
+
+   ```sh
+   cd PhonePad
+   npm ci
+   npm start
+   ```
+
+   Open it in a matching Expo Go app on your phone. Expo's QR loads the app; it does not pair the Mac.
+
+2. In another terminal, start an HTTPS tunnel that forwards WebSockets to OpenTile:
+
+   ```sh
+   ngrok http http://127.0.0.1:8765
+   ```
+
+   Choose **Pair Phone Pad…** on the Mac and paste the tunnel's HTTPS URL.
+
+3. Choose **Scan pairing QR** in the phone app and scan OpenTile's QR.
+
+Slide one finger to move the cursor, tap to click, or slide two fingers to scroll. To move a tile, pinch inward, hold briefly, move both fingers, then lift to place it. Select **Resize** before touching the pad to resize. **Cancel** on the phone or **Escape** on the Mac cancels a preview.
+
+<details>
+<summary>Phone Pad commands and connection limits</summary>
+
+From the repository root, quit OpenTile and launch the packaged build with a tunnel URL to open pairing immediately:
+
+```sh
+OPENTILE_PHONE_PAD_ENDPOINT=https://your-tunnel.ngrok-free.app .build/package/OpenTile.app/Contents/MacOS/OpenTile
+```
+
+Run these commands from `PhonePad/` as needed:
+
+```sh
+# Tunnel the Expo development server across networks
+npx expo start --tunnel
+
+# Build and run on Android (requires Android SDK)
+npm run android
+
+# Build and run on iPhone (requires full Xcode and appropriate signing)
+npm run ios
+```
+
+The Mac tunnel works across networks and requires internet access and a tunnel provider. Automatic LAN discovery and direct offline connections are not implemented. A packaged phone app does not need Expo's development server; no APK or App Store build is distributed yet.
+
+Keep the pairing QR private: it contains a random control key. Input and responses use authenticated AES-GCM encryption in addition to TLS. The phone saves pairing in secure storage; the Mac keeps its key only for the current pairing session. **Stop Phone Pad**, a new pairing, pausing gestures, Mac sleep, or quitting revokes it.
+
+Brief input delays cancel the preview; lift all fingers to resume. The connection tolerates up to ten seconds without an authenticated heartbeat. Backgrounding the phone, losing Accessibility permission, or losing the connection cancels the preview and requires reconnecting. Scrolling remains scrolling until all fingers lift, and an interrupted pinch cannot commit a delayed release.
+
+Android pairing has been exercised on a physical phone. iPhone camera and permission flows, broader device and gesture coverage, and tunnel latency still need manual testing. This preview has not had a dedicated security audit.
+
+</details>
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and manual checks, and [RELEASING.md](RELEASING.md) for release packaging and signing. CI checks tests and builds; trackpad behavior, privacy dialogs, and visual smoothness need testing on a Mac.
+
+[Report issues](https://github.com/moKshagna-p/opentile/issues) with your macOS version, OpenTile version, and steps to reproduce.
+
+Built on [AeroSpace](https://github.com/nikitabobko/AeroSpace) and [Sparkle](https://sparkle-project.org/), with interface inspiration from [Omarchy](https://github.com/omacom/omarchy). Bundled dependency licenses ship with the app.
