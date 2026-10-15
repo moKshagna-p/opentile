@@ -28,7 +28,7 @@ You'll need an **Apple Silicon Mac running macOS 14 or later**. Gesture controls
 3. Quit standalone AeroSpace, then open OpenTile.
 4. Follow **Permission Setup**, then choose **Enable Gestures** from the menu bar.
 
-**Accessibility** lets OpenTile move and resize windows. Optional **Screen Recording** permission enables workspace animation snapshots; images stay in memory, and switching still works without that permission. You can reopen **Permission Setup…** from the menu at any time. macOS may require reopening the app after a permission change.
+**Accessibility** is required to move and resize windows. Permission Setup requests it separately from optional **Screen Recording**: choose **Enable Animations…** if you want workspace animation snapshots, which stay in memory. Switching works without it. Reopen **Permission Setup…** from the menu if needed; macOS may require restarting the app after permission changes.
 
 The current v0.6.3 release is Apple Development signed and **not notarized**. Permission grants may need to be renewed after updates. See [RELEASING.md](RELEASING.md) for signing details.
 
@@ -46,7 +46,9 @@ Start with a focused tiled window.
 
 Choose **Draw to Switch Workspace → Teach a Workspace Symbol** to save three examples of a symbol. That menu also offers Control–Shift as an alternative shortcut.
 
-For app symbols, choose **Draw to Open App → Teach an App Symbol**. Available apps are imported from the active Caps + O layer in `~/.config/karabiner/karabiner.json`; arbitrary Karabiner actions are not imported.
+For app symbols, choose **Draw to Open App → Teach an App Symbol**, select an application, and draw any symbol three times. Karabiner is not required; existing symbols from the active Caps + O layer in `~/.config/karabiner/karabiner.json` continue to work. If a directly selected app moves, teach its symbol again using the new location.
+
+Each drawing mode offers teaching once on its first unrecognized drawing. Cancelling dismisses that introduction permanently; existing saved symbols skip it. Later misses show brief retry guidance. Use the menu to add symbols, or open a saved symbol’s submenu to **Retrain Symbol…** or **Forget Symbol**. Saved symbols have small drawing previews. Retraining replaces saved examples only after three consistent samples; cancelling keeps the original.
 
 Workspace menus and controls work while gestures are paused. Drawing, menu, and `opentile://workspace?name=1` switches use OpenTile's transition; direct engine commands and automatic app routing do not. Reduce Motion skips the animation.
 

@@ -27,24 +27,31 @@ final class PermissionSetup {
     }
 
     var shouldShowOnLaunch: Bool {
-        !defaults.bool(forKey: Self.presentedKey) && !(accessibilityGranted() && captureGranted())
+        !defaults.bool(forKey: Self.presentedKey) && !accessibilityGranted()
     }
 
     func markPresented() { defaults.set(true, forKey: Self.presentedKey) }
 
-    func requestMissingPermissions() {
+    func requestAccessibilityPermission() {
         if !accessibilityGranted() { requestAccessibility() }
+    }
+
+    func requestAnimationPermission() {
         if !captureGranted() { requestCapture() }
     }
 
     func show() {
         let alert = NSAlert()
         alert.messageText = "Set up OpenTile permissions"
-        alert.informativeText = "Accessibility: \(accessibilityGranted() ? "Allowed" : "Not allowed") — moves and resizes windows.\n\nScreen Recording: \(captureGranted() ? "Allowed" : "Not allowed") — animates workspace switches using temporary snapshots kept in memory. Workspace switching works without it.\n\nContinue to approve missing permissions in macOS. macOS handles each permission separately and may ask you to reopen OpenTile. You can revisit Permission Setup from the menu at any time."
-        alert.addButton(withTitle: "Continue")
+        alert.informativeText = "Accessibility: \(accessibilityGranted() ? "Allowed" : "Not allowed") — required to move and resize windows.\n\nScreen Recording: \(captureGranted() ? "Allowed" : "Not allowed") — optional, for workspace animations using temporary snapshots kept in memory. Workspace switching works without it. Choose Enable Animations only if you want this permission.\n\nmacOS may ask you to reopen OpenTile. You can revisit Permission Setup from the menu at any time."
+        alert.addButton(withTitle: accessibilityGranted() ? "Done" : "Allow Accessibility")
+        let offerAnimations = !captureGranted()
+        if offerAnimations { alert.addButton(withTitle: "Enable Animations…") }
         alert.addButton(withTitle: "Later")
         NSApp.activate(ignoringOtherApps: true)
         markPresented()
-        if alert.runModal() == .alertFirstButtonReturn { requestMissingPermissions() }
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn { requestAccessibilityPermission() }
+        if offerAnimations && response == .alertSecondButtonReturn { requestAnimationPermission() }
     }
 }
