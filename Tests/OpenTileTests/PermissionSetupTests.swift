@@ -25,20 +25,25 @@ struct PermissionSetupTests {
             #expect(!(makeSetup().shouldShowOnLaunch))
             #expect((accessibilityRequests) == (0))
             #expect((captureRequests) == (0))
-            setup.requestMissingPermissions()
+            setup.requestAccessibilityPermission()
             #expect((accessibilityRequests) == (1))
-            #expect((captureRequests) == (1))
+            #expect((captureRequests) == (0))
             accessibility = true
-            setup.requestMissingPermissions()
+            setup.requestAccessibilityPermission()
             #expect((accessibilityRequests) == (1))
-            #expect((captureRequests) == (2))
+            #expect((captureRequests) == (0))
             capture = true
-            setup.requestMissingPermissions()
+            setup.requestAccessibilityPermission()
             #expect((accessibilityRequests) == (1))
-            #expect((captureRequests) == (2))
+            #expect((captureRequests) == (0))
             capture = false
-            setup.requestMissingPermissions()
-            #expect((captureRequests) == (3))
+            setup.requestAccessibilityPermission()
+            #expect((captureRequests) == (0))
+            setup.requestAnimationPermission()
+            #expect(captureRequests == 1)
+            capture = true
+            setup.requestAnimationPermission()
+            #expect(captureRequests == 1)
             #expect(!(makeSetup().shouldShowOnLaunch))
         }
     }
@@ -50,11 +55,11 @@ struct PermissionSetupTests {
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
             let setup = PermissionSetup(defaults: defaults,
-                accessibilityGranted: { true }, captureGranted: { true },
+                accessibilityGranted: { true }, captureGranted: { false },
                 requestAccessibility: { Issue.record("Already granted") },
                 requestCapture: { Issue.record("Already granted") })
             #expect(!(setup.shouldShowOnLaunch))
-            setup.requestMissingPermissions()
+            setup.requestAccessibilityPermission()
         }
     }
 }
