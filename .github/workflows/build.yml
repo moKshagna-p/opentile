@@ -32,6 +32,11 @@ jobs:
           swift --version
       - name: Test OpenTile with Swift Testing
         run: scripts/test.sh
+      - name: Test focus benchmark tooling
+        run: |
+          python3 -B -m unittest discover -s scripts/tests -p 'test_*.py'
+          swiftc scripts/focused-window.swift -o "$RUNNER_TEMP/focused-window"
+          "$RUNNER_TEMP/focused-window" --self-test
       - name: Package application
         env:
           OPENTILE_SIGNING_IDENTITY: "-"

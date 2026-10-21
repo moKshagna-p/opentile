@@ -68,6 +68,8 @@ private func newConnection(_ connection: NWConnection) async { // todo add exit 
             }
             continue
         }
+        let trace = FocusTrace.make()
+        trace?.emit("engine_received")
         let parsedCmd = parseCommand(request.args)
         guard let token: RunSessionGuard = await .isServerEnabled(orIsEnableCommand: parsedCmd.cmdOrNil) else {
             await answerToClient(
@@ -87,7 +89,7 @@ private func newConnection(_ connection: NWConnection) async { // todo add exit 
             case .cmd(let command):
                 var answer: ServerAnswer =
                     await Result {
-                        try await runLightSession(.socketServer(command.args), token) { () throws in
+                        try await runLightSession(.socketServer(command.args), token, trace: trace) { () throws in
                             let env = CmdEnv.init(
                                 windowId: request.windowId.flattenOptional(),
                                 workspaceName: request.workspace.flattenOptional(),

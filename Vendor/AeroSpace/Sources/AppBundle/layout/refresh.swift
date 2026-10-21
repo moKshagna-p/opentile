@@ -12,11 +12,14 @@ func scheduleCancellableCompleteRefreshSession(
     activeRefreshTask?.cancel()
     activeRefreshTask = Task.startUnstructured { @MainActor in
         try checkCancellation()
-        await runHeavyCompleteRefreshSession(
-            event,
-            assumeCancellable: true,
-            optimisticallyPreLayoutWorkspaces: optimisticallyPreLayoutWorkspaces,
-        )
+        // Background reconciliation is not part of the command's focus trace.
+        await FocusTrace.$current.withValue(nil) {
+            await runHeavyCompleteRefreshSession(
+                event,
+                assumeCancellable: true,
+                optimisticallyPreLayoutWorkspaces: optimisticallyPreLayoutWorkspaces,
+            )
+        }
     }
 }
 
@@ -59,32 +62,45 @@ func runHeavyCompleteRefreshSession(
 func runLightSession<T>(
     _ event: RefreshSessionEvent,
     _: RunSessionGuard,
+    trace: FocusTrace? = nil,
     body: @MainActor () async throws -> T,
 ) async throws -> T {
-    let state = signposter.beginInterval(#function, "event: \(event) axTaskLocalAppThreadToken: \(axTaskLocalAppThreadToken?.idForDebug)")
-    defer { signposter.endInterval(#function, state) }
-    activeRefreshTask?.cancel() // Give priority to runSession
-    activeRefreshTask = nil
-    return try await $refreshSessionEvent.withValue(event) {
-        let nativeFocused = try await getNativeFocusedWindow(.cancellable)
-        if let nativeFocused { try await debugWindowsIfRecording(nativeFocused, .cancellable) }
-        updateFocusCache(nativeFocused)
-        let focusBefore = focus.windowOrNil
+    let trace = trace ?? FocusTrace.make()
+    return try await FocusTrace.$current.withValue(trace) {
+        trace?.emit("session_received")
+        var completed = false
+        defer { trace?.emit(completed ? "session_complete" : "session_failed") }
+        let state = signposter.beginInterval(#function, "event: \(event) axTaskLocalAppThreadToken: \(axTaskLocalAppThreadToken?.idForDebug)")
+        defer { signposter.endInterval(#function, state) }
+        activeRefreshTask?.cancel() // Give priority to runSession
+        activeRefreshTask = nil
+        return try await $refreshSessionEvent.withValue(event) {
+            let nativeFocused = try await getNativeFocusedWindow(.cancellable)
+            trace?.emit("native_read_complete", window: nativeFocused?.windowId ?? 0)
+            if let nativeFocused { try await debugWindowsIfRecording(nativeFocused, .cancellable) }
+            updateFocusCache(nativeFocused)
+            let focusBefore = focus.windowOrNil
 
-        await refreshModel_nonCancellable()
-        let result = try await body()
-        await refreshModel_nonCancellable()
+            await refreshModel_nonCancellable()
+            trace?.emit("model_before_complete")
+            let result = try await body()
+            trace?.emit("commands_complete", window: focus.windowOrNil?.windowId ?? 0)
+            await refreshModel_nonCancellable()
+            trace?.emit("model_after_complete", window: focus.windowOrNil?.windowId ?? 0)
 
-        let focusAfter = focus.windowOrNil
+            let focusAfter = focus.windowOrNil
 
-        updateTrayText()
-        SecureInputPanel.shared.refresh()
-        if !event.isFocusFollowsMouse { try await layoutWorkspaces() }
-        if focusBefore != focusAfter {
-            focusAfter?.nativeFocus() // syncFocusToMacOs
+            updateTrayText()
+            SecureInputPanel.shared.refresh()
+            if !event.isFocusFollowsMouse { try await layoutWorkspaces() }
+            trace?.emit("layout_complete")
+            if focusBefore != focusAfter {
+                focusAfter?.nativeFocus() // syncFocusToMacOs
+            }
+            if !event.isFocusFollowsMouse { scheduleCancellableCompleteRefreshSession(event) }
+            completed = true
+            return result
         }
-        if !event.isFocusFollowsMouse { scheduleCancellableCompleteRefreshSession(event) }
-        return result
     }
 }
 
