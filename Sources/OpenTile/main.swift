@@ -274,8 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recognizer = GestureRecognizer()
             appDrawingOwnedFrames = false
         }
-        for frame in frames {
-            guard let event = recognizer.update(frame.contacts, time: frame.time, optionHeld: frame.optionHeld) else { continue }
+        // Lifecycle handlers can cancel recognition before the next frame is consumed.
+        let events = frames.lazy.compactMap { self.recognizer.update($0.contacts, time: $0.time, optionHeld: $0.optionHeld) }
+        processGesturePreviewBatch(events) { event in
             switch event {
             case .began(let point): begin(point)
             case .moved(let point): move(point)
