@@ -1,4 +1,5 @@
 import Foundation
+import DequeModule
 import OpenTileCore
 
 /// Owned and used on the main thread, alongside the gesture recognizer.
@@ -30,7 +31,7 @@ final class GesturePolling {
 final class WorkspaceRequestQueue {
     var isReady = false { didSet { schedule() } }
     var isBusy = false { didSet { schedule() } }
-    private var requests: [WorkspaceRequest] = []
+    private var requests: Deque<WorkspaceRequest> = []
     private var scheduled = false
     private let perform: (WorkspaceRequest) -> Void
 

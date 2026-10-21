@@ -3,6 +3,22 @@ import Testing
 @testable import AppBundle
 
 struct TileResizeMotionTests {
+    @Test @MainActor func rapidRetargetingCanCancelEveryWindowAndRestart() {
+        let animator = TileResizeAnimator()
+        let from = CGRect(x: 0, y: 0, width: 400, height: 600)
+        for index in 0..<10_000 {
+            let target = CGRect(x: 0, y: 0, width: index.isMultiple(of: 2) ? 600 : 400, height: 600)
+            animator.schedule(UInt32(index % 8), from: from, to: target, at: Double(index))
+        }
+        #expect(animator.isAnimating)
+        for id in UInt32(0)..<8 { animator.cancel(id) }
+        #expect(!animator.isAnimating)
+        animator.schedule(0, from: from, to: from, at: 0)
+        #expect(animator.isAnimating)
+        animator.cancelAll()
+        #expect(!animator.isAnimating)
+    }
+
     @Test @MainActor func cancellationStopsClockAfterLastWindowAndAllowsRestart() {
         let animator = TileResizeAnimator()
         let from = CGRect(x: 0, y: 0, width: 400, height: 600)
