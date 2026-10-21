@@ -44,14 +44,14 @@ struct AeroSpace {
         process.arguments = arguments
         process.standardOutput = output
         process.standardError = output
+        let completion = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in completion.signal() }
         try process.run()
-        let deadline = Date().addingTimeInterval(4)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
-        if process.isRunning {
+        if completion.wait(timeout: .now() + 4) == .timedOut, process.isRunning {
             process.terminate()
-            let grace = Date().addingTimeInterval(0.25)
-            while process.isRunning && Date() < grace { Thread.sleep(forTimeInterval: 0.01) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            if completion.wait(timeout: .now() + .milliseconds(250)) == .timedOut, process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
             process.waitUntilExit()
             throw Failure(message: "AeroSpace timed out. Check that it is running.")
         }
