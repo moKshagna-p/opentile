@@ -30,6 +30,44 @@ struct WorkspaceDrawingTests {
         #expect(!(WorkspaceMatcher.isValid([line(.init(x: 0.1, y: 0.1), .init(x: 0.11, y: 0.11))])))
     }
     @Test
+    func normalizationRejectsInvalidOrDisconnectedInput() {
+        let valid = line(.init(x: 0.1, y: 0.2), .init(x: 0.9, y: 0.2))
+        let invalid: [[[DrawingPoint]]] = [
+            [], [[]], [Array(valid.prefix(4))],
+            (0..<5).map { [DrawingPoint(x: Double($0) / 4, y: 0.2)] },
+            [Array(repeating: DrawingPoint(x: 0.5, y: 0.5), count: 5)],
+            [line(.init(x: 0, y: 0), .init(x: 0.08, y: 0))]
+        ]
+        for strokes in invalid {
+            #expect(WorkspaceMatcher.normalized(strokes) == nil)
+        }
+        for value in [Double.nan, .infinity, -.infinity] {
+            #expect(WorkspaceMatcher.normalized([valid, [.init(x: value, y: 0.2)]]) == nil)
+            #expect(WorkspaceMatcher.normalized([valid, [.init(x: 0.2, y: value)]]) == nil)
+        }
+    }
+    @Test
+    func normalizationPreservesStrokeGapsAndIgnoresDuplicatePoints() throws {
+        let strokes = [line(.init(x: 0.1, y: 0.1), .init(x: 0.3, y: 0.1)),
+                       line(.init(x: 0.7, y: 0.9), .init(x: 0.9, y: 0.9))]
+        let normalized = try #require(WorkspaceMatcher.normalized(strokes))
+        #expect(normalized.count == 64)
+        #expect(normalized.prefix(32).allSatisfy { abs($0.y + 0.5) < 1e-12 })
+        #expect(normalized.suffix(32).allSatisfy { abs($0.y - 0.5) < 1e-12 })
+        let duplicated = [[]] + strokes.map { $0.flatMap { [$0, $0] } } + [[]]
+        #expect(WorkspaceMatcher.normalized(duplicated) == normalized)
+    }
+    @Test
+    func normalizationOfDenseInputPreservesLineGeometry() throws {
+        let dense = (0..<4_096).map { DrawingPoint(x: Double($0) / 4_095, y: 0.5) }
+        let normalized = try #require(WorkspaceMatcher.normalized([dense]))
+        #expect(normalized.count == 64)
+        for (index, point) in normalized.enumerated() {
+            #expect(abs(point.x - (Double(index) / 63 - 0.5)) < 1e-12)
+            #expect(abs(point.y) < 1e-12)
+        }
+    }
+    @Test
     func testHandwritingProportionsAndStrokeDirection() {
         let original = [line(.init(x: 0.1, y: 0.1), .init(x: 0.1, y: 0.8)),
                         line(.init(x: 0.1, y: 0.1), .init(x: 0.6, y: 0.1))]
@@ -88,6 +126,20 @@ struct WorkspaceDrawingTests {
         backwards.update([], time: 2)
         backwards.update([], time: 1)
         #expect(backwards.cancelled)
+    }
+    @Test
+    func inputFloodCancelsAtPointLimitWithoutGrowingFurther() {
+        var capture = DrawingCapture()
+        for index in 0..<4_096 {
+            capture.update([Contact(id: 1, x: 0.1 + Double(index % 256) / 320, y: 0.5)], time: Double(index))
+        }
+        #expect(!capture.cancelled)
+        #expect(capture.strokes.first?.count == 4_096)
+        for index in 4_096..<8_192 {
+            capture.update([Contact(id: 1, x: 0.9, y: 0.5)], time: Double(index))
+        }
+        #expect(capture.cancelled)
+        #expect(capture.strokes.first?.count == 4_096)
     }
     @Test
     func testPersistenceRoundTrip() throws {
