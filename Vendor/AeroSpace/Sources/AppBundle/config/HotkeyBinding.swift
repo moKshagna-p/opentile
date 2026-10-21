@@ -30,13 +30,15 @@ extension HotKey {
     let targetBindings = targetMode.flatMap { config.modes[$0] }?.bindings ?? [:]
     for binding in targetBindings.values where !hotkeys.keys.contains(binding.descriptionWithKeyCode) {
         hotkeys[binding.descriptionWithKeyCode] = HotKey(key: binding.keyCode, modifiers: binding.modifiers, keyDownHandler: {
+            let trace = FocusTrace.make()
+            trace?.emit("input_received")
             Task.startUnstructured {
                 if let activeMode {
                     broadcastEvent(.bindingTriggered(
                         mode: activeMode,
                         binding: binding.descriptionWithKeyNotation,
                     ))
-                    try await runLightSession(.hotkeyBinding, .checkServerIsEnabledOrDie()) { () throws in
+                    try await runLightSession(.hotkeyBinding, .checkServerIsEnabledOrDie(), trace: trace) { () throws in
                         _ = await config.modes[activeMode]?.bindings[binding.descriptionWithKeyCode]?.commands
                             .run(.defaultEnv, .emptyStdin)
                     }

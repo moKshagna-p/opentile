@@ -69,6 +69,7 @@ private struct FrozenFocus: AeroAny, Equatable, Sendable {
     }
 
     _focus = newFocus.frozen
+    FocusTrace.current?.emit("target_selected", window: newFocus.windowOrNil?.windowId ?? 0)
     let status = newFocus.workspace.workspaceMonitor.setActiveWorkspace(newFocus.workspace)
 
     newFocus.windowOrNil?.markAsMostRecentChild()

@@ -45,13 +45,22 @@ public enum WorkspaceMatcher {
         hypot(a.x - b.x, a.y - b.y)
     }
     static func normalized(_ strokes: [[DrawingPoint]]) -> [DrawingPoint]? {
-        let points = strokes.flatMap { $0 }
-        guard points.count >= 5, points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }),
-              let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
-              let minY = points.map(\.y).min(), let maxY = points.map(\.y).max() else { return nil }
+        var count = 0
+        var minX = Double.infinity, maxX = -Double.infinity
+        var minY = Double.infinity, maxY = -Double.infinity
+        for stroke in strokes {
+            for point in stroke {
+                guard point.x.isFinite, point.y.isFinite else { return nil }
+                count += 1
+                minX = min(minX, point.x); maxX = max(maxX, point.x)
+                minY = min(minY, point.y); maxY = max(maxY, point.y)
+            }
+        }
+        guard count >= 5 else { return nil }
         let scale = max(maxX - minX, maxY - minY)
         guard scale >= 0.06 else { return nil }
         var segments: [(DrawingPoint, DrawingPoint, Double)] = []
+        segments.reserveCapacity(count)
         for stroke in strokes where stroke.count > 1 {
             for i in 1..<stroke.count {
                 let length = distance(stroke[i-1], stroke[i])
@@ -61,6 +70,7 @@ public enum WorkspaceMatcher {
         let total = segments.reduce(0) { $0 + $1.2 }
         guard total >= 0.1, !segments.isEmpty else { return nil }
         var result: [DrawingPoint] = []
+        result.reserveCapacity(64)
         var index = 0, offset = 0.0
         for sample in 0..<64 {
             let target = total * Double(sample) / 63
@@ -86,7 +96,7 @@ public enum WorkspaceMatcher {
     public static func match(_ strokes: [[DrawingPoint]], symbols: [WorkspaceSymbol]) -> String? {
         guard let input = normalized(strokes) else { return nil }
         func directed(_ a: [DrawingPoint], _ b: [DrawingPoint]) -> Double {
-            a.reduce(0) { sum, point in sum + b.map { distance(point, $0) }.min()! } / Double(a.count)
+            a.reduce(0) { sum, point in sum + b.lazy.map { distance(point, $0) }.min()! } / Double(a.count)
         }
         var scores: [String: Double] = [:]
         for symbol in symbols {

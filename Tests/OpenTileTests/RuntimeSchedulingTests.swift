@@ -100,3 +100,32 @@ private func drainMainQueue() async {
     await drainMainQueue()
     #expect(received.count == requests.count)
 }
+
+@Test @MainActor func workspaceBurstWhileBusyPreservesOrderAndResumes() async {
+    let requests = (0..<1_000).map { WorkspaceRequest.workspace(String($0)) }
+    var received: [WorkspaceRequest] = []
+    var inFlight = false
+    var overlapped = false
+    var queue: WorkspaceRequestQueue!
+    queue = WorkspaceRequestQueue { request in
+        overlapped = overlapped || inFlight
+        inFlight = true
+        received.append(request)
+        queue.isBusy = true
+        if received.count == 1 { requests.dropFirst(500).forEach(queue.append) }
+        DispatchQueue.main.async {
+            inFlight = false
+            queue.isBusy = false
+        }
+    }
+    defer { queue = nil }
+    requests.prefix(500).forEach(queue.append)
+    queue.isReady = true
+    for _ in 0..<3_000 { await drainMainQueue() }
+    #expect(received == requests)
+    #expect(!overlapped && !inFlight && !queue.isBusy)
+    queue.append(.backAndForth)
+    for _ in 0..<3 { await drainMainQueue() }
+    #expect(received == requests + [.backAndForth])
+    #expect(!inFlight)
+}

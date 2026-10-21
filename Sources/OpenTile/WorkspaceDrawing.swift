@@ -61,6 +61,7 @@ final class WorkspaceDrawing: NSObject {
     private var blocked = false
     private var started = 0.0
     private var previewTime = 0.0
+    private var needsPreviewMatch = true
     private var lastInput = 0.0
     private var fingerDown = false
     private var feedbackDismissal: DispatchWorkItem?
@@ -140,6 +141,7 @@ final class WorkspaceDrawing: NSObject {
     }
     @objc private func togglePreview() {
         defaults.set(!previewEnabled, forKey: previewKey)
+        needsPreviewMatch = true
         if !shouldShowPreview { panel.orderOut(nil) }
         rebuildMenu()
     }
@@ -206,6 +208,7 @@ final class WorkspaceDrawing: NSObject {
     }
     @objc private func cancelTraining() { training = nil; samples = []; cancel(); rebuildMenu() }
     private func save() {
+        needsPreviewMatch = true
         if let data = try? JSONEncoder().encode(symbols) { defaults.set(data, forKey: storageKey) }
     }
     private func reloadMappings() {
@@ -213,6 +216,7 @@ final class WorkspaceDrawing: NSObject {
         guard data != mappingsData else { return }
         mappingsData = data
         mappings = data.map(AppMapping.read) ?? []
+        needsPreviewMatch = true
         rebuildMenu()
     }
     private var availableSymbols: [WorkspaceSymbol] {
@@ -256,7 +260,8 @@ final class WorkspaceDrawing: NSObject {
     func stop() { cancelTraining(); held = false; appGate = AppDrawingGate() }
 
     /// Returns true while drawing owns this frame, including the release frame.
-    func process(_ frames: [TouchBridge.Frame], allowed: Bool, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) -> Bool {
+    func process(_ frames: [TouchBridge.Frame], allowed: Bool, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags,
+                 now: Double = ProcessInfo.processInfo.systemUptime) -> Bool {
         let flags = modifiers.intersection([.control, .option, .shift, .command])
         let down = flags == chord
         if apps {
@@ -264,11 +269,11 @@ final class WorkspaceDrawing: NSObject {
             if down && !owns { cancel(); held = false; return false }
         }
         if choosingWorkspace { held = down; blocked = true; return true }
-        let now = ProcessInfo.processInfo.systemUptime
         if !allowed { cancel(); held = down; return down }
         if down && !held {
             if apps { reloadMappings() }
             held = true; blocked = false; started = now; lastInput = now; fingerDown = false; capture = DrawingCapture(); canvas.strokes = []
+            needsPreviewMatch = true
             show(training.map { "Teach \(displayName($0)) · sample \(samples.count+1) of 3\nDraw with one finger · Escape cancels" } ?? (apps ? "Draw your app symbol\nRelease Option to open · Two fingers resize" : "Draw your workspace symbol\nRelease keys to switch · Escape cancels"))
             return true // discard frames queued before activation
         }
@@ -287,14 +292,21 @@ final class WorkspaceDrawing: NSObject {
         guard down else { return false }
         guard !blocked else { return true }
         if now - started > 12 { cancel(); onStatus?("Drawing timed out — try again"); return true }
+        // Capture only appends ink; these counts detect changes without comparing point arrays.
+        let previousInkSize = (capture.strokes.count, capture.strokes.last?.count)
         for frame in frames {
                     capture.update(frame.contacts, time: frame.time)
                     lastInput = now; fingerDown = !frame.contacts.isEmpty
                 }
         if capture.cancelled { cancel(); onStatus?("Drawing cancelled — use one finger"); return true }
-        if shouldShowPreview { canvas.strokes = capture.strokes }
-        if previewEnabled && training == nil && now - previewTime > 0.12 {
+        let inkSize = (capture.strokes.count, capture.strokes.last?.count)
+        if inkSize != previousInkSize { needsPreviewMatch = true }
+        if shouldShowPreview && inkSize != (canvas.strokes.count, canvas.strokes.last?.count) {
+            canvas.strokes = capture.strokes
+        }
+        if needsPreviewMatch && previewEnabled && training == nil && now - previewTime > 0.12 {
             previewTime = now
+            needsPreviewMatch = false
             let match = WorkspaceMatcher.match(capture.strokes, symbols: availableSymbols)
             show(match.map { key in apps ? "\(displayName(key))\nRelease Option to open · Escape cancels" : "Workspace \(key)\nRelease keys to switch · Escape cancels" } ?? (introduction.shouldOffer ? "Keep drawing · no confident match\nRelease keys to teach your first symbol" : "Keep drawing · no confident match\nRetry, or teach a symbol from the menu"))
         }
