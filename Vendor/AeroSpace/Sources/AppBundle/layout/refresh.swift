@@ -30,6 +30,8 @@ func runHeavyCompleteRefreshSession(
     layoutWorkspaces shouldLayoutWorkspaces: Bool = true,
     optimisticallyPreLayoutWorkspaces: Bool = false,
 ) async {
+    openTileSnapshotMutationCount += 1
+    defer { openTileSnapshotMutationCount -= 1 }
     let state = signposter.beginInterval(#function, "event: \(event) axTaskLocalAppThreadToken: \(axTaskLocalAppThreadToken?.idForDebug)")
     defer { signposter.endInterval(#function, state) }
     if !TrayMenuModel.shared.isEnabled { return }
@@ -65,6 +67,8 @@ func runLightSession<T>(
     trace: FocusTrace? = nil,
     body: @MainActor () async throws -> T,
 ) async throws -> T {
+    openTileSnapshotMutationCount += 1
+    defer { openTileSnapshotMutationCount -= 1 }
     let trace = trace ?? FocusTrace.make()
     return try await FocusTrace.$current.withValue(trace) {
         trace?.emit("session_received")

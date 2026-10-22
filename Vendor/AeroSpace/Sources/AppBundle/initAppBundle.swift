@@ -6,6 +6,8 @@ import Foundation
     // Embedded hosts own onboarding; the engine only waits for their grant.
     if !promptForAccessibility { TrayMenuModel.shared.axPermissionStatus = .waiting }
     Task.startUnstructured {
+        openTileSnapshotMutationCount += 1
+        defer { openTileSnapshotMutationCount -= 1 }
         initTerminationHandler()
         unsafe _isCli = false
         initServerArgs()

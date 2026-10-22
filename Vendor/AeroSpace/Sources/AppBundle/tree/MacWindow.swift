@@ -18,6 +18,8 @@ final class MacWindow: Window {
     @discardableResult
     static func getOrRegister(windowId: UInt32, macApp: MacApp) async throws -> MacWindow {
         if let existing = allWindowsMap[windowId] { return existing }
+        openTileSnapshotMutationCount += 1
+        defer { openTileSnapshotMutationCount -= 1 }
         let rect = try await macApp.getAxRect(windowId, .cancellable)
         let data = try await unbindAndGetBindingDataForNewWindow(
             windowId,

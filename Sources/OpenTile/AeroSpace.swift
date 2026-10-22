@@ -68,6 +68,30 @@ struct AeroSpace {
         return try JSONDecoder().decode([Tile].self, from: data)
     }
 
+    @MainActor func snapshot(
+        on worker: DispatchQueue,
+        read: @MainActor () async throws -> OpenTileGestureSnapshot? = readOpenTileGestureSnapshot
+    ) async throws -> DesktopSnapshot {
+        try Task.checkCancellation()
+        if let snapshot = try await read() {
+            try Task.checkCancellation()
+            func convert(_ window: OpenTileSnapshotWindow) -> WindowTile {
+                let endpoint = window.endpoint
+                return WindowTile(tile: Tile(id: endpoint.id, pid: endpoint.pid, workspace: endpoint.workspace,
+                                             layout: endpoint.layout), frame: window.frame)
+            }
+            return DesktopSnapshot(source: convert(snapshot.source), targets: snapshot.targets.map(convert))
+        }
+        try Task.checkCancellation()
+        let snapshot: DesktopSnapshot = try await withCheckedThrowingContinuation { continuation in
+            worker.async {
+                continuation.resume(with: Result { try self.snapshot() })
+            }
+        }
+        try Task.checkCancellation()
+        return snapshot
+    }
+
     func snapshot() throws -> DesktopSnapshot {
         guard let source = try tiles(["--focused"]).first else { throw Failure(message: "Focus a tiled window first.") }
         guard ["h_tiles", "v_tiles"].contains(source.layout) else { throw Failure(message: "Use a tiled window; floating and accordion layouts are not supported yet.") }

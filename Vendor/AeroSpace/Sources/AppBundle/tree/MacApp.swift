@@ -116,6 +116,15 @@ final class MacApp: AbstractApp {
         }
     }
 
+    // Snapshot reads must not register windows or run window-detection callbacks.
+    @MainActor func getKnownFocusedWindow(_ cm: CancellationMode) async throws -> Window? {
+        let id = try await thread?.runInLoop(cm) { [axApp] _ in
+            axApp.threadGuarded.get(Ax.focusedWindowAttr)?.windowId
+        }
+        guard let id, let window = MacWindow.allWindowsMap[id], window.app === self else { return nil }
+        return window
+    }
+
     // todo merge together with detectNewWindows
     func getFocusedWindow(_ cm: CancellationMode) async throws -> Window? {
         let windowId = try await thread?.runInLoop(cm) { [nsApp, axApp, windows] job in

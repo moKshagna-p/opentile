@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     private var generation = 0
     private var snapshot: DesktopSnapshot?
+    private var snapshotTask: Task<Void, Never>?
     private var resizing = false
     private var latestResize: Double = 0
     private var readingWorkspace = false
@@ -302,23 +303,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         origin = point
         latestPoint = point
         status("Reading workspace…")
-        worker.async {
-            let result = Result { try aerospace.snapshot() }
-            DispatchQueue.main.async {
-                guard self.generation == token, self.enabled || (self.phoneGesture && self.phonePad.isConnected) else { return }
-                self.readingWorkspace = false
-                switch result {
-                case .success(let snapshot):
-                    self.snapshot = snapshot
-                    if self.resizing {
-                        self.resizePreview(self.latestResize)
-                        self.status("Pinch inward to grow · Outward to shrink · Lift to apply")
-                    } else {
-                        self.move(self.latestPoint)
-                        self.status("Center to swap · Edge to insert · Escape cancels")
-                    }
-                case .failure(let error): self.cancel(); self.status(error.localizedDescription)
+        snapshotTask?.cancel()
+        snapshotTask = Task { @MainActor in
+            let result: Result<DesktopSnapshot, Error>
+            do { result = .success(try await aerospace.snapshot(on: worker)) }
+            catch { result = .failure(error) }
+            guard self.generation == token, self.enabled || (self.phoneGesture && self.phonePad.isConnected) else { return }
+            self.snapshotTask = nil
+            self.readingWorkspace = false
+            switch result {
+            case .success(let snapshot):
+                self.snapshot = snapshot
+                if self.resizing {
+                    self.resizePreview(self.latestResize)
+                    self.status("Pinch inward to grow · Outward to shrink · Lift to apply")
+                } else {
+                    self.move(self.latestPoint)
+                    self.status("Center to swap · Edge to insert · Escape cancels")
                 }
+            case .failure(let error): self.cancel(); self.status(error.localizedDescription)
             }
         }
     }
@@ -492,7 +495,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func clearPreview() { snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; phoneGesture = false; ghost.hide(); preview.hide() }
+    private func clearPreview() {
+        snapshotTask?.cancel()
+        snapshotTask = nil
+        snapshot = nil; destination = nil; resizing = false; readingWorkspace = false; phoneGesture = false
+        ghost.hide(); preview.hide()
+    }
     private func cancel() {
         phonePad.cancelInput()
         drawing.cancel()
@@ -583,6 +591,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {
+        generation += 1
+        clearPreview()
         phonePad.stop()
         wallpaperPicker.stop()
         splitMenuBar.stop()

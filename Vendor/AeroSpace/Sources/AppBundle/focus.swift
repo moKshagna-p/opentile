@@ -118,6 +118,10 @@ extension Workspace {
 @MainActor var prevFocus: LiveFocus? { _prevFocus?.live.takeIf { $0 != focus } }
 
 @MainActor private var onFocusChangedRecursionGuard = false
+@MainActor var isOpenTileFocusSettled: Bool {
+    !onFocusChangedRecursionGuard && focus.frozen == _lastKnownFocus
+}
+
 // Should be called in refreshSession
 @MainActor func checkOnFocusChangedCallbacks_nonCancellable() async {
     if refreshSessionEvent?.isStartup == true {
