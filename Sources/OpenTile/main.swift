@@ -183,8 +183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return event
         }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.wallpaperPicker.cancel()
-            self?.disable()
+            MainActor.assumeIsolated {
+                self?.wallpaperPicker.cancel()
+                self?.disable()
+            }
         }
         workspaceRequests.isReady = true
         if permissions.shouldShowOnLaunch { showPermissionSetup() }
