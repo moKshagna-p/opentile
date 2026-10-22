@@ -47,13 +47,15 @@ struct OpenTileSwapFailure: LocalizedError {
               endpoint.layout == "\(parent.orientation == .h ? "h" : "v")_tiles" else { return false }
         return window.parents.compactMap { $0 as? TilingContainer }.allSatisfy { $0.layout == .tiles }
     }
-    guard matches(sourceWindow, source), matches(targetWindow, target),
-          let sourceParent = sourceWindow.parent as? TilingContainer,
-          let targetParent = targetWindow.parent as? TilingContainer else { throw OpenTileSwapFailure() }
-    let sourceIndex = sourceWindow.ownIndex
-    let targetIndex = targetWindow.ownIndex
-    let sourceWeight = sourceWindow.getWeight(sourceParent.orientation)
-    let targetWeight = targetWindow.getWeight(targetParent.orientation)
+    guard matches(sourceWindow, source), matches(targetWindow, target) else { throw OpenTileSwapFailure() }
+    let nodes: [TreeNode] = [sourceWindow, targetWindow]
+        + sourceWindow.parents.compactMap { $0 as? TilingContainer }
+        + targetWindow.parents.compactMap { $0 as? TilingContainer }
+    let bindings = nodes.map { node in
+        (node: node, parent: node.parent, index: node.ownIndex,
+         orientation: (node as? TilingContainer)?.orientation,
+         weight: (node.parent as? TilingContainer).map { node.getWeight($0.orientation) })
+    }
 
     for window in [sourceWindow, targetWindow] {
         guard try await window.getAxRect(.cancellable) != nil,
@@ -65,10 +67,11 @@ struct OpenTileSwapFailure: LocalizedError {
     guard RunSessionGuard.isServerEnabled != nil,
           resolve(sourceID) === sourceWindow, resolve(targetID) === targetWindow,
           matches(sourceWindow, source), matches(targetWindow, target),
-          sourceWindow.parent === sourceParent, targetWindow.parent === targetParent,
-          sourceWindow.ownIndex == sourceIndex, targetWindow.ownIndex == targetIndex,
-          sourceWindow.getWeight(sourceParent.orientation) == sourceWeight,
-          targetWindow.getWeight(targetParent.orientation) == targetWeight,
+          bindings.allSatisfy({ binding in
+              binding.node.parent === binding.parent && binding.node.ownIndex == binding.index
+                  && (binding.node as? TilingContainer)?.orientation == binding.orientation
+                  && (binding.node.parent as? TilingContainer).map { binding.node.getWeight($0.orientation) } == binding.weight
+          }),
           isLive(sourceWindow), isLive(targetWindow) else { throw OpenTileSwapFailure() }
 
     guard sourceWindow.focusWindow() else { throw OpenTileSwapFailure() }

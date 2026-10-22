@@ -129,11 +129,11 @@ import Testing
         #expect(f.workspace.allLeafWindowsRecursive.map(\.windowId) == order)
     }
 
-    @Test(arguments: ["moved", "closed", "replacement", "layout", "reordered", "weight", "disabled", "cancelled", "AX-error"])
+    @Test(arguments: ["moved", "closed", "replacement", "layout", "reordered", "weight", "ancestor-orientation", "ancestor-order", "ancestor-weight", "ancestor-parent", "disabled", "cancelled", "AX-error"])
     func revalidatesAfterSuspendingReads(kind: String) async {
-        let f = Fixture()
+        let f = Fixture(nested: kind.hasPrefix("ancestor-"))
         defer { f.cleanup() }
-        let source = f.endpoint(0)
+        let source = f.endpoint(kind.hasPrefix("ancestor-") ? 3 : 0)
         let target = f.endpoint(1)
         let initialFocus = focus.windowOrNil
         var resolvable = true
@@ -148,6 +148,17 @@ import Testing
             case "layout": f.workspace.rootTilingContainer.changeOrientation(.v)
             case "reordered": swapWindows(mruDominant: f.windows[0], f.windows[2])
             case "weight": f.windows[0].setWeight(f.workspace.rootTilingContainer.orientation, 42)
+            case "ancestor-orientation": f.workspace.rootTilingContainer.changeOrientation(.v)
+            case "ancestor-order":
+                let parent = f.windows[1].parent as! TilingContainer
+                parent.bind(to: f.workspace.rootTilingContainer, adaptiveWeight: 11, index: 0)
+            case "ancestor-weight":
+                (f.windows[1].parent as! TilingContainer).setWeight(f.workspace.rootTilingContainer.orientation, 42)
+            case "ancestor-parent":
+                let parent = f.windows[1].parent as! TilingContainer
+                let container = TilingContainer.newHTiles(parent: f.workspace.rootTilingContainer,
+                                                          adaptiveWeight: 1, index: INDEX_BIND_LAST)
+                parent.bind(to: container, adaptiveWeight: 11, index: INDEX_BIND_LAST)
             case "disabled": TrayMenuModel.shared.isEnabled = false
             case "cancelled": withUnsafeCurrentTask { $0?.cancel() }
             case "AX-error": throw CocoaError(.fileReadUnknown)
