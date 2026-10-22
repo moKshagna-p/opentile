@@ -6,6 +6,21 @@ Built on [AeroSpace](https://github.com/nikitabobko/AeroSpace), OpenTile combine
 
 [Download](https://github.com/moKshagna-p/opentile/releases) · [Contributing](CONTRIBUTING.md) · [Report an issue](https://github.com/moKshagna-p/opentile/issues)
 
+## Performance
+
+Measured improvements over earlier OpenTile implementations on an Apple M3 Mac:
+
+| Workload | Before → after | Reduction |
+| --- | ---: | ---: |
+| Command transport overhead | 13.13 → 1.91 ms | 85% |
+| Adjacent-window swap | 108.19 → 42.03 ms | 61% |
+| Swap across five tree positions | 288.12 → 40.82 ms | 86% |
+| Move-preview batch, 8 frames at 60 Hz | 3.32 → 1.35 ms | 59% |
+| Resize-preview batch, 8 frames at 60 Hz | 2.39 → 0.81 ms | 66% |
+| Symbol matching, 100 targets / 4,096 points | 19.38 → 10.54 ms | 46% |
+
+These are workload-specific results; previews and matching use synthetic inputs. A matched performance comparison with stock AeroSpace has not been collected. See [benchmarks and AeroSpace comparison](BENCHMARKS.md) for methods, sample counts, and limits.
+
 ## Installation
 
 Requires **Apple Silicon, macOS 14 or later**, and a built-in trackpad for gesture controls.
