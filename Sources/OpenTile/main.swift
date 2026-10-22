@@ -40,8 +40,8 @@ final class Outline {
             label.textColor = color
         }
         let top = NSScreen.screens.first?.frame.maxY ?? 0
-        panel.setFrame(CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height), display: true)
         label.stringValue = text
+        panel.setFrame(CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height), display: true)
         panel.orderFrontRegardless()
     }
     func hide() { panel.orderOut(nil) }
