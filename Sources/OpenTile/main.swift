@@ -183,8 +183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return event
         }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.wallpaperPicker.cancel()
-            self?.disable()
+            MainActor.assumeIsolated {
+                self?.wallpaperPicker.cancel()
+                self?.disable()
+            }
         }
         workspaceRequests.isReady = true
         if permissions.shouldShowOnLaunch { showPermissionSetup() }
@@ -398,20 +400,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         committing = true
         toggleItem.isEnabled = false
         status(action == .swap ? "Swapping windows…" : "Inserting window…")
-        worker.async {
-            let result = Result {
-                switch action {
-                case .swap: try aerospace.swap(source: snapshot.source.tile, target: target.tile)
-                case .insert(let edge): try aerospace.insert(source: snapshot.source.tile, target: target.tile, edge: edge)
-                }
+        let complete: (Result<Void, Error>) -> Void = { result in
+            self.committing = false
+            self.toggleItem.isEnabled = true
+            switch result {
+            case .success: self.status(action == .swap ? "Windows swapped · ready for another gesture" : "Window inserted · ready for another gesture")
+            case .failure(let error): self.status(error.localizedDescription); NSSound.beep()
             }
-            DispatchQueue.main.async {
-                self.committing = false
-                self.toggleItem.isEnabled = true
-                switch result {
-                case .success: self.status(action == .swap ? "Windows swapped · ready for another gesture" : "Window inserted · ready for another gesture")
-                case .failure(let error): self.status(error.localizedDescription); NSSound.beep()
+        }
+        if action == .swap {
+            Task { @MainActor in
+                do {
+                    try await aerospace.swap(source: snapshot.source.tile, target: target.tile)
+                    complete(.success(()))
+                } catch { complete(.failure(error)) }
+            }
+        } else {
+            worker.async {
+                let result = Result {
+                    if case .insert(let edge) = action {
+                        try aerospace.insert(source: snapshot.source.tile, target: target.tile, edge: edge)
+                    }
                 }
+                DispatchQueue.main.async { complete(result) }
             }
         }
     }
