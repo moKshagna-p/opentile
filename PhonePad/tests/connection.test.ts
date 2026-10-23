@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { PadFrames } from '../src/PadFrames.ts';
+import { animationFrames } from './animationFrames.ts';
 import { AESEncryptionKey, AESSealedData, aesEncryptAsync, aesDecryptAsync, holdEncryption } from './cryptoMock.ts';
 
 registerHooks({ resolve(specifier, context, next) {
@@ -94,4 +96,64 @@ test('backpressure disconnects before it accumulates input', async () => {
     assert.equal(socket.readyState, 3);
     assert.equal(socket.sent.length, 1);
   } finally { connection.close(); }
+});
+
+test('duplicate polling does not exhaust the queue during a stalled encryption burst', async t => {
+  const clock = animationFrames(t);
+  const { connection, socket } = await authenticated();
+  const release = holdEncryption();
+  let attempts = 0;
+  const frames = new PadFrames((contacts, resize) => { attempts++; connection.frame(contacts, resize); });
+  try {
+    frames.update([{ id: 1, x: 0.5, y: 0.5 }], false);
+    for (let sample = 1; sample <= 7; sample++) {
+      clock.advance(1000 / 240);
+      frames.update([{ id: 1, x: 0.5 + sample / 100, y: 0.5 }], false);
+      if (sample === 3 || sample === 7) clock.tick(0);
+    }
+    frames.update([], false);
+    console.log(`Phone stalled-encryption burst: frame sends=${attempts}, disconnected=${socket.readyState !== Socket.OPEN}`);
+    assert.equal(socket.readyState, Socket.OPEN);
+    release();
+    await waitFor(() => socket.sent.length === 10);
+    const packets = await Promise.all(socket.sent.slice(1).map(decode));
+    assert.deepEqual(packets.map(packet => packet.seq), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    assert.deepEqual(packets.map(packet => packet.contacts.length), [1, 1, 1, 1, 1, 1, 1, 1, 0]);
+    assert.equal(clock.pending, 0);
+  } finally { release(); frames.stop(); connection.close(); }
+});
+
+test('cancel invalidates encrypted and queued movement and stops held-contact callbacks', async t => {
+  const clock = animationFrames(t);
+  const { connection, socket } = await authenticated();
+  const release = holdEncryption();
+  const frames = new PadFrames((contacts, resize) => connection.frame(contacts, resize));
+  try {
+    frames.update([{ id: 1, x: 0.5, y: 0.5 }], false);
+    frames.update([{ id: 1, x: 0.6, y: 0.5 }], false);
+    clock.tick(0);
+    frames.stop();
+    connection.cancel();
+    clock.tick();
+    release();
+    await waitFor(() => socket.sent.length === 3);
+    const packets = await Promise.all(socket.sent.slice(1).map(decode));
+    assert.deepEqual(packets.map(packet => packet.type), ['cancel', 'frame']);
+    assert.deepEqual(packets[1].contacts, []);
+    assert.equal(clock.pending, 0);
+  } finally { release(); frames.stop(); connection.close(); }
+});
+
+test('input that finishes encryption after its deadline is still rejected', async t => {
+  const clock = animationFrames(t);
+  const { connection, socket } = await authenticated();
+  const release = holdEncryption();
+  const frames = new PadFrames((contacts, resize) => connection.frame(contacts, resize));
+  try {
+    frames.update([{ id: 1, x: 0.5, y: 0.5 }], false);
+    clock.advance(251);
+    release();
+    await waitFor(() => socket.readyState === 3);
+    assert.equal(socket.sent.length, 1);
+  } finally { release(); frames.stop(); connection.close(); }
 });

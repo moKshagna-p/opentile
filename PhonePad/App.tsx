@@ -6,6 +6,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import * as SecureStore from 'expo-secure-store';
 import { PadConnection } from './src/PadConnection';
+import { PadFrames } from './src/PadFrames';
 import { normalizeTouches, parsePairing } from './src/protocol';
 import type { Pairing, Touch } from './src/protocol';
 
@@ -24,13 +25,13 @@ function Pad() {
   const touches = useRef<Touch[]>([]);
   const mode = useRef(false);
   const blocked = useRef(false);
-  const frame = useRef<number | null>(null);
+  const frames = useRef<PadFrames | null>(null);
+  if (frames.current === null) frames.current = new PadFrames((contacts, resize) => connection.current?.frame(contacts, resize));
   const scanLocked = useRef(false);
   const alive = useRef(true);
 
   function stopFrames() {
-    if (frame.current !== null) cancelAnimationFrame(frame.current);
-    frame.current = null;
+    frames.current?.stop();
     touches.current = [];
   }
   function disconnect(reason: string) {
@@ -70,23 +71,22 @@ function Pad() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
       if (packet.type === 'armed') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      if (packet.type === 'cancelled') blocked.current = touches.current.length > 0;
+      if (packet.type === 'cancelled') {
+        blocked.current = touches.current.length > 0;
+        frames.current?.stop();
+        connection.current?.frame([], mode.current);
+      }
       if (packet.message && packet.type !== 'pong') setHint(packet.message);
     });
     connection.current = next;
     void next.connect();
   }
 
-  function pump() {
-    if (!touches.current.length) { frame.current = null; return; }
-    connection.current?.frame(blocked.current ? [] : touches.current, mode.current);
-    frame.current = requestAnimationFrame(pump);
-  }
   function touch(event: GestureResponderEvent) {
     if (!connected) return;
     const raw = event.nativeEvent.touches;
     if (!raw.length) {
-      connection.current?.frame([], mode.current);
+      frames.current?.update([], mode.current);
       stopFrames();
       blocked.current = false;
       return;
@@ -95,14 +95,15 @@ function Pad() {
     try { touches.current = normalizeTouches(raw, dimensions.current.width, dimensions.current.height); }
     catch {
       blocked.current = true;
+      frames.current?.stop();
       connection.current?.cancel();
       return;
     }
-    connection.current?.frame(blocked.current ? [] : touches.current, mode.current);
-    if (frame.current === null) frame.current = requestAnimationFrame(pump);
+    frames.current?.update(blocked.current ? [] : touches.current, mode.current);
   }
   function cancel() {
     blocked.current = touches.current.length > 0;
+    frames.current?.stop();
     connection.current?.cancel();
     setHint('Cancelled. Lift all fingers to start again.');
   }
