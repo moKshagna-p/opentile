@@ -2,6 +2,14 @@ import AppKit
 import Testing
 @testable import OpenTile
 
+// Scheduling tests must not depend on the host's opportunistic cache eviction.
+private final class RetainedThumbnails: NSCache<NSURL, NSImage> {
+    private var images: [NSURL: NSImage] = [:]
+    override func object(forKey key: NSURL) -> NSImage? { images[key] }
+    override func setObject(_ obj: NSImage, forKey key: NSURL, cost: Int) { images[key] = obj }
+    override func removeAllObjects() { images.removeAll() }
+}
+
 private final class ThumbnailDecoder: @unchecked Sendable {
     let started = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
@@ -56,7 +64,7 @@ struct WallpaperThumbnailTests {
         let decoder = ThumbnailDecoder(blocked: Set(old.prefix(2)))
         let queue = OperationQueue()
         var renders = 0
-        let thumbnails = WallpaperThumbnails(queue: queue, decode: decoder.decode) { renders += 1 }
+        let thumbnails = WallpaperThumbnails(queue: queue, cache: RetainedThumbnails(), decode: decoder.decode) { renders += 1 }
         defer { decoder.release.signal(); decoder.release.signal(); thumbnails.reset() }
         thumbnails.update(visible: old, selected: old[0])
         #expect(await waitForWorkers(decoder))
@@ -85,7 +93,7 @@ struct WallpaperThumbnailTests {
         let entries = urls("selection")
         let decoder = ThumbnailDecoder(blocked: Set(entries.prefix(2)))
         let queue = OperationQueue()
-        let thumbnails = WallpaperThumbnails(queue: queue, decode: decoder.decode) {}
+        let thumbnails = WallpaperThumbnails(queue: queue, cache: RetainedThumbnails(), decode: decoder.decode) {}
         defer { decoder.release.signal(); decoder.release.signal(); thumbnails.reset() }
         thumbnails.update(visible: entries, selected: entries[0])
         #expect(await waitForWorkers(decoder))
@@ -102,7 +110,7 @@ struct WallpaperThumbnailTests {
         let entries = urls("revisit")
         let decoder = ThumbnailDecoder(blocked: Set(entries.prefix(2)))
         let queue = OperationQueue()
-        let thumbnails = WallpaperThumbnails(queue: queue, decode: decoder.decode) {}
+        let thumbnails = WallpaperThumbnails(queue: queue, cache: RetainedThumbnails(), decode: decoder.decode) {}
         defer { decoder.release.signal(); decoder.release.signal(); thumbnails.reset() }
         thumbnails.update(visible: entries, selected: entries[0])
         #expect(await waitForWorkers(decoder))
@@ -122,7 +130,7 @@ struct WallpaperThumbnailTests {
         let decoder = ThumbnailDecoder(blocked: [url])
         let queue = OperationQueue()
         var renders = 0
-        let thumbnails = WallpaperThumbnails(queue: queue, decode: decoder.decode) { renders += 1 }
+        let thumbnails = WallpaperThumbnails(queue: queue, cache: RetainedThumbnails(), decode: decoder.decode) { renders += 1 }
         defer { decoder.release.signal(); decoder.release.signal(); thumbnails.reset() }
         thumbnails.update(visible: [url], selected: url)
         #expect(await waitForWorkers(decoder, count: 1))
@@ -154,5 +162,23 @@ struct WallpaperThumbnailTests {
         thumbnails.update(visible: [url], selected: url)
         await finish(queue)
         #expect(renders == 2)
+    }
+
+    @Test @MainActor func evictedThumbnailCanBeDecodedAgain() async {
+        let url = urls("evicted", count: 1)[0]
+        let decoder = ThumbnailDecoder()
+        let queue = OperationQueue()
+        let cache = RetainedThumbnails()
+        let thumbnails = WallpaperThumbnails(queue: queue, cache: cache, decode: decoder.decode) {}
+        defer { thumbnails.reset() }
+        thumbnails.update(visible: [url], selected: url)
+        await finish(queue)
+        #expect(thumbnails.image(at: url) != nil)
+        cache.removeAllObjects()
+        #expect(thumbnails.image(at: url) == nil)
+        thumbnails.update(visible: [url], selected: url)
+        await finish(queue)
+        #expect(decoder.calls == [url, url])
+        #expect(thumbnails.image(at: url) != nil)
     }
 }

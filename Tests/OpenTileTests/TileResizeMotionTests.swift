@@ -4,6 +4,24 @@ import Testing
 @testable import AppBundle
 
 struct TileResizeMotionTests {
+    @Test @MainActor func disabledEngineFinishesAndReconcilesImmediately() {
+        let enabled = TrayMenuModel.shared.isEnabled
+        TrayMenuModel.shared.isEnabled = false
+        defer { TrayMenuModel.shared.isEnabled = enabled }
+        var refreshes = 0
+        let animator = TileResizeAnimator(refresh: { _ in refreshes += 1 })
+        defer { animator.cancelAll() }
+        let target = CGRect(x: 0, y: 0, width: 600, height: 600)
+        animator.schedule(1, from: CGRect(x: 0, y: 0, width: 400, height: 600), to: target, at: 0)
+        #expect(animator.deferRefresh(.ax("AXResized"), for: 1, mouseDown: false))
+        var frames: [CGRect] = []
+        animator.tick(at: 0.01) { _, frame in frames.append(frame); return true }
+        #expect(frames == [target])
+        #expect(refreshes == 1)
+        animator.tick(at: 0.02) { _, _ in Issue.record("Disabled animation kept writing frames"); return true }
+        #expect(refreshes == 1)
+    }
+
     @Test @MainActor func neighboringTilesFinishWithin160Milliseconds() {
         let animator = TileResizeAnimator()
         defer { animator.cancelAll() }
@@ -12,12 +30,12 @@ struct TileResizeMotionTests {
         animator.schedule(1, from: CGRect(x: 0, y: 0, width: 400, height: 600), to: left, at: 0)
         animator.schedule(2, from: CGRect(x: 410, y: 0, width: 600, height: 600), to: right, at: 0)
         var frames: [UInt32: CGRect] = [:]
-        animator.tick(at: 0.08) { id, frame in frames[id] = frame; return true }
+        animator.tick(at: 0.08, skipAnimation: false) { id, frame in frames[id] = frame; return true }
         #expect(frames[1] != left && frames[2] != right)
         #expect(abs(frames[2]!.minX - frames[1]!.maxX - 10) < 0.001)
-        animator.tick(at: 0.16) { id, frame in frames[id] = frame; return true }
+        animator.tick(at: 0.16, skipAnimation: false) { id, frame in frames[id] = frame; return true }
         #expect(frames[1] == left && frames[2] == right)
-        animator.tick(at: 0.18) { _, _ in Issue.record("Resize missed its completion budget"); return true }
+        animator.tick(at: 0.18, skipAnimation: false) { _, _ in Issue.record("Resize missed its completion budget"); return true }
     }
 
     @Test @MainActor func animationNotificationBurstReconcilesOnceAfterFinalFrames() {
@@ -32,17 +50,17 @@ struct TileResizeMotionTests {
             #expect(animator.deferRefresh(.ax("AXResized"), for: 2, mouseDown: false))
         }
         var frames: [UInt32: CGRect] = [:]
-        animator.tick(at: 0.1) { id, frame in frames[id] = frame; return true }
+        animator.tick(at: 0.1, skipAnimation: false) { id, frame in frames[id] = frame; return true }
         #expect(refreshes == 0)
         #expect(frames.count == 2)
-        animator.tick(at: TileResizeMotion.duration) { id, frame in
+        animator.tick(at: TileResizeMotion.duration, skipAnimation: false) { id, frame in
             #expect(refreshes == 0)
             frames[id] = frame
             return true
         }
         #expect(frames[1] == to && frames[2] == to)
         #expect(refreshes == 1)
-        animator.tick(at: 1) { _, _ in Issue.record("Completed motion wrote another frame"); return true }
+        animator.tick(at: 1, skipAnimation: false) { _, _ in Issue.record("Completed motion wrote another frame"); return true }
         #expect(refreshes == 1)
         #expect(!animator.deferRefresh(.ax("AXResized"), for: 1, mouseDown: false))
     }
@@ -82,7 +100,7 @@ struct TileResizeMotionTests {
         defer { animator.cancelAll() }
         animator.schedule(1, from: .zero, to: .zero, at: 0)
         #expect(animator.deferRefresh(.ax("AXMoved"), for: 1, mouseDown: false))
-        animator.tick(at: 0.1) { _, _ in false }
+        animator.tick(at: 0.1, skipAnimation: false) { _, _ in false }
         #expect(refreshes == 1)
     }
 
@@ -95,7 +113,7 @@ struct TileResizeMotionTests {
         animator.schedule(1, from: .zero, to: .zero, at: 0)
         #expect(animator.deferRefresh(.ax("AXResized"), for: 1, mouseDown: false))
         currentlyManipulatedWithMouseWindowId = 1
-        animator.tick(at: 0.1) { _, _ in Issue.record("Animation interfered with mouse"); return true }
+        animator.tick(at: 0.1, skipAnimation: false) { _, _ in Issue.record("Animation interfered with mouse"); return true }
         #expect(refreshes == 1)
     }
 
@@ -107,7 +125,7 @@ struct TileResizeMotionTests {
         #expect(animator.deferRefresh(.ax("AXResized"), for: 1, mouseDown: false))
         animator.cancelAll()
         animator.schedule(2, from: .zero, to: .zero, at: 0)
-        animator.tick(at: 1) { _, _ in true }
+        animator.tick(at: 1, skipAnimation: false) { _, _ in true }
         #expect(refreshes == 0)
     }
 

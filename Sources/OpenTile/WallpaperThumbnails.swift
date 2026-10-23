@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor final class WallpaperThumbnails {
-    private let cache = NSCache<NSURL, NSImage>()
+    private let cache: NSCache<NSURL, NSImage>
     private let queue: OperationQueue
     private let decode: @Sendable (URL) -> CGImage?
     private let onChange: () -> Void
@@ -10,9 +10,11 @@ import AppKit
     private var visible = Set<URL>()
 
     init(queue: OperationQueue = OperationQueue(),
+         cache: NSCache<NSURL, NSImage> = NSCache(),
          decode: @escaping @Sendable (URL) -> CGImage? = { try? WallpaperLibrary.image(at: $0, maxPixels: 1000) },
          onChange: @escaping () -> Void) {
         self.queue = queue
+        self.cache = cache
         self.decode = decode
         self.onChange = onChange
         queue.maxConcurrentOperationCount = 2

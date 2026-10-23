@@ -109,7 +109,9 @@ final class TileResizeAnimator {
         }
     }
 
-    func tick(at now: TimeInterval, applyFrame: (UInt32, CGRect) -> Bool = { id, frame in
+    func tick(at now: TimeInterval,
+              skipAnimation: Bool = !TrayMenuModel.shared.isEnabled || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              applyFrame: (UInt32, CGRect) -> Bool = { id, frame in
         guard let window = MacWindow.allWindowsMap[id], !window.isHiddenInCorner else { return false }
         window.macApp.setAxFrame(id, frame.origin, frame.size)
         return true
@@ -119,9 +121,7 @@ final class TileResizeAnimator {
                 motions.removeValue(forKey: id)
                 continue
             }
-            let finished = now - motion.start >= TileResizeMotion.duration
-                || !TrayMenuModel.shared.isEnabled
-                || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            let finished = now - motion.start >= TileResizeMotion.duration || skipAnimation
             let frame = finished ? motion.to : motion.frame(at: now)
             if !applyFrame(id, frame) || finished { motions.removeValue(forKey: id) }
         }
