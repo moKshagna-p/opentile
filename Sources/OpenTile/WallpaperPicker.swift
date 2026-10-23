@@ -40,15 +40,7 @@ enum WallpaperPickerStyle {
     private var generation = 0
     private var scanTask: Task<[WallpaperEntry], Never>?
     private var applyTask: Task<Void, Never>?
-    private let thumbnails = NSCache<NSURL, NSImage>()
-    private let thumbnailQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 2
-        queue.qualityOfService = .userInitiated
-        return queue
-    }()
-    private var pending = Set<URL>()
-    private var failed = Set<URL>()
+    private lazy var thumbnails = WallpaperThumbnails { [weak self] in self?.render() }
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     var onStatus: ((String) -> Void)?
@@ -126,10 +118,7 @@ enum WallpaperPickerStyle {
         generation += 1
         let token = generation
         scanTask?.cancel()
-        thumbnailQueue.cancelAllOperations()
-        pending.removeAll()
-        failed.removeAll()
-        thumbnails.removeAllObjects()
+        thumbnails.reset()
         entries = []
         filtered = []
         carousel?.display(entries: [], selected: 0, image: { _ in nil }, select: { _ in })
@@ -163,8 +152,10 @@ enum WallpaperPickerStyle {
 
     private func render() {
         guard let carousel else { return }
+        let visible = WallpaperCarousel.visibleIndices(count: filtered.count, selected: selected).map { filtered[$0].url }
+        thumbnails.update(visible: visible, selected: filtered.indices.contains(selected) ? filtered[selected].url : nil)
         carousel.display(entries: filtered, selected: selected, image: { [weak self] entry in
-            self?.thumbnail(entry)
+            self?.thumbnails.image(at: entry.url)
         }, select: { [weak self] index in
             guard let self else { return }
             if self.selected == index { self.apply() }
@@ -178,26 +169,6 @@ enum WallpaperPickerStyle {
             caption.stringValue = entries.isEmpty ? "Add images to ~/Pictures/Wallpapers, then reopen the picker" : "No matching wallpapers"
             hint.attributedStringValue = WallpaperPickerStyle.searchGuidance()
         }
-    }
-
-    private func thumbnail(_ entry: WallpaperEntry) -> NSImage? {
-        if let image = thumbnails.object(forKey: entry.url as NSURL) { return image }
-        guard !pending.contains(entry.url), !failed.contains(entry.url) else { return nil }
-        pending.insert(entry.url)
-        let token = generation
-        thumbnailQueue.addOperation { [weak self] in
-            let cgImage = try? WallpaperLibrary.image(at: entry.url, maxPixels: 1000)
-            DispatchQueue.main.async {
-                guard let self, self.generation == token, self.panel != nil else { return }
-                self.pending.remove(entry.url)
-                if let cgImage {
-                    self.thumbnails.setObject(NSImage(cgImage: cgImage, size: .zero), forKey: entry.url as NSURL, cost: cgImage.bytesPerRow * cgImage.height)
-                } else { self.failed.insert(entry.url) }
-                self.render()
-            }
-        }
-        thumbnails.totalCostLimit = 64 * 1024 * 1024
-        return nil
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -265,8 +236,7 @@ enum WallpaperPickerStyle {
         generation += 1
         scanTask?.cancel()
         scanTask = nil
-        thumbnailQueue.cancelAllOperations()
-        pending.removeAll()
+        thumbnails.reset()
         panel?.delegate = nil
         panel?.orderOut(nil)
         panel = nil
@@ -298,8 +268,12 @@ private final class WallpaperPanel: NSPanel {
 /// Omarchy-inspired carousel: expanded center image surrounded by overlapping slanted slices.
 private final class WallpaperCarousel: NSView {
     private var cards: [URL: WallpaperCard] = [:]
+    static func visibleIndices(count: Int, selected: Int) -> [Int] {
+        (0..<count).filter { abs($0 - selected) <= 6 }
+    }
+
     func display(entries: [WallpaperEntry], selected: Int, image: (WallpaperEntry) -> NSImage?, select: @escaping (Int) -> Void) {
-        let indices = entries.indices.filter { abs($0 - selected) <= 6 }
+        let indices = Self.visibleIndices(count: entries.count, selected: selected)
         let visible = Set(indices.map { entries[$0].url })
         for url in Array(cards.keys) where !visible.contains(url) { cards.removeValue(forKey: url)?.removeFromSuperview() }
         let scale = min(1, bounds.height / 475, bounds.width / 1100)
