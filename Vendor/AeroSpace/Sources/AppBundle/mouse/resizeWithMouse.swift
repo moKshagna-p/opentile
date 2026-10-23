@@ -10,7 +10,9 @@ func resizedObs(_: AXObserver, ax: AXUIElement, notif: CFString, _: UnsafeMutabl
     Task.startUnstructured { @MainActor in
         guard let token: RunSessionGuard = .isServerEnabled else { return }
         guard let windowId, let window = Window.get(byId: windowId), try await isManipulatedWithMouse(window) else {
-            scheduleCancellableCompleteRefreshSession(.ax(notif))
+            if !TileResizeAnimator.shared.deferRefresh(.ax(notif), for: windowId) {
+                scheduleCancellableCompleteRefreshSession(.ax(notif))
+            }
             return
         }
         resizeWithMouseTask?.cancel()
