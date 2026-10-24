@@ -30,4 +30,21 @@ struct AppUpdaterTests {
             #expect((menu.items[0].title) == ("Check for Updates…"))
         }
     }
+
+    @Test
+    func testUpdateSessionRestoresStatusIcon() async {
+        await MainActor.run {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            defer { NSStatusBar.system.removeStatusItem(item) }
+            let original = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "OpenTile")
+            item.button?.image = original
+            let updater = AppUpdater()
+            updater.install(in: NSMenu(), statusButton: item.button)
+            updater.showAvailableUpdate(version: "0.3.0")
+            #expect(item.button?.image !== original)
+            updater.showAvailableUpdate(version: "0.3.1")
+            updater.standardUserDriverWillFinishUpdateSession()
+            #expect(item.button?.image === original)
+        }
+    }
 }

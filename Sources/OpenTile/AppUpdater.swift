@@ -9,6 +9,7 @@ final class AppUpdater: NSObject, @preconcurrency SPUStandardUserDriverDelegate 
     private let checkItem = NSMenuItem(title: "Check for Updates…", action: nil, keyEquivalent: "")
     private let automaticItem = NSMenuItem(title: "Automatically Check for Updates", action: nil, keyEquivalent: "")
     private weak var statusButton: NSStatusBarButton?
+    private var defaultImage: NSImage?
 
     func install(in menu: NSMenu, statusButton: NSStatusBarButton?) {
         self.statusButton = statusButton
@@ -64,13 +65,16 @@ final class AppUpdater: NSObject, @preconcurrency SPUStandardUserDriverDelegate 
 
     func showAvailableUpdate(version: String) {
         checkItem.title = "Update Available… (\(version))"
+        if defaultImage == nil { defaultImage = statusButton?.image }
         statusButton?.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "OpenTile update available")
         statusButton?.toolTip = "OpenTile \(version) is available"
     }
 
     func standardUserDriverWillFinishUpdateSession() {
         checkItem.title = "Check for Updates…"
-        statusButton?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "OpenTile")
+        // Restore the icon the app set rather than duplicating its symbol name.
+        if let defaultImage { statusButton?.image = defaultImage }
+        defaultImage = nil
         statusButton?.toolTip = nil
     }
 }
