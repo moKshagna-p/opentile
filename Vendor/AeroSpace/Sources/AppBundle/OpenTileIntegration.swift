@@ -87,6 +87,33 @@ struct OpenTileSwapFailure: LocalizedError {
         && (info[kCGWindowOwnerPID as String] as? Int32) == window.app.pid
 }
 
+public struct OpenTileCommandFailure: LocalizedError {
+    public let message: String
+    public var errorDescription: String? { message }
+}
+
+/// Runs a CLI command in-process exactly as the socket server would, so OpenTile
+/// skips launching the bundled client and never trusts the shared /tmp socket.
+@MainActor public func runOpenTileCommand(_ args: [String]) async throws -> String {
+    try Task.checkCancellation()
+    let command: any Command
+    switch parseCommand(args) {
+        case .cmd(let parsed): command = parsed
+        case .help(let help): return help
+        case .failure(let err): throw OpenTileCommandFailure(message: err.msg)
+    }
+    guard let token = RunSessionGuard.isServerEnabled(orIsEnableCommand: command) else {
+        throw OpenTileCommandFailure(message: "The window manager is disabled. Enable it to switch workspaces.")
+    }
+    let result = try await runLightSession(.socketServer(command.args), token) {
+        await command.run(.defaultEnv, .emptyStdin)
+    }
+    guard result.exitCode.rawValue == 0 else {
+        throw OpenTileCommandFailure(message: result.stderr.joined(separator: "\n"))
+    }
+    return result.stdout.joined(separator: "\n")
+}
+
 @MainActor public func stopOpenTileEngine() {
     terminationHandler?.beforeTermination()
 }

@@ -63,6 +63,37 @@ struct AeroSpace {
         return data
     }
 
+    /// Runs in the embedded engine without a CLI launch or socket round trip.
+    /// AX reads cannot be interrupted, so callers are released at the CLI's 4 second limit.
+    @MainActor static func command(
+        _ arguments: [String], timeout: Duration = .seconds(4),
+        run: @escaping @MainActor ([String]) async throws -> String = runOpenTileCommand
+    ) async throws -> String {
+        let pending = PendingCommand()
+        return try await withCheckedThrowingContinuation { continuation in
+            pending.continuation = continuation
+            let work = Task { @MainActor in
+                do { pending.finish(.success(try await run(arguments))) }
+                catch { pending.finish(.failure(error)) }
+            }
+            pending.expiry = Task { @MainActor in
+                guard (try? await Task.sleep(for: timeout)) != nil else { return }
+                work.cancel()
+                pending.finish(.failure(Failure(message: "AeroSpace timed out. Check that it is running.")))
+            }
+        }
+    }
+
+    @MainActor private final class PendingCommand {
+        var continuation: CheckedContinuation<String, Error>?
+        var expiry: Task<Void, Never>?
+        func finish(_ result: Result<String, Error>) {
+            expiry?.cancel()
+            continuation?.resume(with: result)
+            continuation = nil
+        }
+    }
+
     func tiles(_ filter: [String]) throws -> [Tile] {
         let data = try run(["list-windows"] + filter + ["--format", "%{window-id} %{app-pid} %{workspace} %{window-parent-container-layout}", "--json"])
         return try JSONDecoder().decode([Tile].self, from: data)
