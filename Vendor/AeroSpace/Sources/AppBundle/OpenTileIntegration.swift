@@ -106,12 +106,21 @@ public struct OpenTileCommandFailure: LocalizedError {
         throw OpenTileCommandFailure(message: "The window manager is disabled. Enable it to switch workspaces.")
     }
     let result = try await runLightSession(.socketServer(command.args), token) {
-        await command.run(.defaultEnv, .emptyStdin)
+        // Session preparation can suspend in non-cancellable focus callbacks.
+        try Task.checkCancellation()
+        return await command.run(.defaultEnv, .emptyStdin)
     }
-    guard result.exitCode.rawValue == 0 else {
-        throw OpenTileCommandFailure(message: result.stderr.joined(separator: "\n"))
+    return try result.openTileOutput()
+}
+
+extension CmdResult {
+    func openTileOutput() throws -> String {
+        guard exitCode.rawValue == 0 else {
+            let message = (stdout + stderr).filter { !$0.isEmpty }.joined(separator: "\n")
+            throw OpenTileCommandFailure(message: message.isEmpty ? "Window manager command failed." : message)
+        }
+        return stdout.joined(separator: "\n")
     }
-    return result.stdout.joined(separator: "\n")
 }
 
 @MainActor public func stopOpenTileEngine() {

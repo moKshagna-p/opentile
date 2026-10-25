@@ -64,34 +64,31 @@ struct AeroSpace {
     }
 
     /// Runs in the embedded engine without a CLI launch or socket round trip.
-    /// AX reads cannot be interrupted, so callers are released at the CLI's 4 second limit.
+    /// The timeout releases callers while asynchronous AX work is stalled.
     @MainActor static func command(
         _ arguments: [String], timeout: Duration = .seconds(4),
         run: @escaping @MainActor ([String]) async throws -> String = runOpenTileCommand
     ) async throws -> String {
-        let pending = PendingCommand()
-        return try await withCheckedThrowingContinuation { continuation in
-            pending.continuation = continuation
-            let work = Task { @MainActor in
-                do { pending.finish(.success(try await run(arguments))) }
-                catch { pending.finish(.failure(error)) }
-            }
-            pending.expiry = Task { @MainActor in
-                guard (try? await Task.sleep(for: timeout)) != nil else { return }
-                work.cancel()
-                pending.finish(.failure(Failure(message: "AeroSpace timed out. Check that it is running.")))
-            }
+        try Task.checkCancellation()
+        let (results, continuation) = AsyncThrowingStream<String, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let work = Task { @MainActor in
+            do {
+                try Task.checkCancellation()
+                continuation.yield(try await run(arguments))
+                continuation.finish()
+            } catch { continuation.finish(throwing: error) }
         }
-    }
-
-    @MainActor private final class PendingCommand {
-        var continuation: CheckedContinuation<String, Error>?
-        var expiry: Task<Void, Never>?
-        func finish(_ result: Result<String, Error>) {
-            expiry?.cancel()
-            continuation?.resume(with: result)
-            continuation = nil
+        let expiry = Task { @MainActor in
+            try await Task.sleep(for: timeout)
+            work.cancel()
+            continuation.finish(throwing: Failure(message: "AeroSpace timed out. Check that it is running."))
         }
+        defer { work.cancel(); expiry.cancel() }
+        for try await result in results {
+            try Task.checkCancellation()
+            return result
+        }
+        throw CancellationError()
     }
 
     func tiles(_ filter: [String]) throws -> [Tile] {
