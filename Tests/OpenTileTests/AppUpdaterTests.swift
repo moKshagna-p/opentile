@@ -34,6 +34,7 @@ struct AppUpdaterTests {
     @Test
     func testUpdateSessionRestoresStatusIcon() async {
         await MainActor.run {
+            _ = NSApplication.shared
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             defer { NSStatusBar.system.removeStatusItem(item) }
             let original = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "OpenTile")
