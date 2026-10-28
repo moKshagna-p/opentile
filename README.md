@@ -32,6 +32,8 @@ Start with a focused tiled window. Movement previews show where a window will be
 
 Teach symbols from **Draw to Switch Workspace** or **Draw to Open App** in the menu. Each symbol requires three examples. Workspace controls remain available while gestures are paused.
 
+Workspace transitions skip their snapshot animation when capture or switching is slow, so optional effects do not keep adding delay under load.
+
 Resizing uses a short ease-out animation with neighboring tiles moving together. Reduce Motion skips the animation.
 
 Trackpad support is experimental and uses Apple's private `MultitouchSupport` framework. Native macOS gestures may also respond.

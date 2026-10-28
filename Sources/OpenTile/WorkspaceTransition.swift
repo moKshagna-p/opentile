@@ -3,21 +3,57 @@ import QuartzCore
 import ScreenCaptureKit
 import OpenTileCore
 
+/// Optional capture work must not hold up switching if ScreenCaptureKit stalls.
+@MainActor final class WorkspaceCapture {
+    private var inFlight = false
+
+    func run<Value>(timeout: TimeInterval, operation: @escaping @MainActor () async throws -> Value) async -> Value? {
+        guard timeout > 0, !inFlight, !Task.isCancelled else { return nil }
+        inFlight = true
+        let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
+        let (values, continuation) = AsyncStream<Value>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let work = Task { @MainActor in
+            defer { inFlight = false; continuation.finish() }
+            if !Task.isCancelled, let value = try? await operation(), !Task.isCancelled { continuation.yield(value) }
+        }
+        let timer = Task { @MainActor in
+            try await Task.sleep(until: deadline, clock: .continuous)
+            continuation.finish()
+        }
+        defer { work.cancel(); timer.cancel() }
+        for await value in values {
+            return !Task.isCancelled && ContinuousClock.now < deadline ? value : nil
+        }
+        // Keep the slot occupied until even a non-cancellable capture returns.
+        return nil
+    }
+}
+
 /// Covers the CLI switch, then animates two captured views as one vertical strip.
 /// Images are transient and never written to disk.
 @MainActor final class WorkspaceTransition {
     private var stack = WorkspaceStack(workspaces: UserDefaults.standard.stringArray(forKey: "workspaceStack") ?? [])
+    private let capture = WorkspaceCapture()
+    private let prepare: @MainActor () async throws -> [Surface]
+    private let captureIncoming: @MainActor ([Surface]) async throws -> [CGImage]
 
-    private struct Surface {
+    struct Surface {
         let panel: NSPanel
         let layer: CALayer
         let displayID: CGDirectDisplayID
         let configuration: SCStreamConfiguration
     }
 
+    init(prepare: @escaping @MainActor () async throws -> [Surface] = { try await WorkspaceTransition.prepareSurfaces() },
+         captureIncoming: @escaping @MainActor ([Surface]) async throws -> [CGImage] = { try await WorkspaceTransition.captureIncomingSurfaces($0) }) {
+        self.prepare = prepare
+        self.captureIncoming = captureIncoming
+    }
+
     func perform(from source: String, to destination: String?,
                  switchWorkspace: () async throws -> String) async throws -> Bool {
         let started = CACurrentMediaTime()
+        let captureDeadline = started + 0.35
         func trace(_ stage: String) {
             if ProcessInfo.processInfo.environment["OPENTILE_TRACE_TRANSITIONS"] == "1" {
                 NSLog("WorkspaceTransition %@ %.1f ms", stage, (CACurrentMediaTime() - started) * 1_000)
@@ -25,50 +61,33 @@ import OpenTileCore
         }
         defer { trace("finished") }
         if destination == source { return false }
-        var surfaces: [Surface] = []
-        var watchdog: Timer?
-        defer {
-            watchdog?.invalidate()
-            surfaces.forEach { $0.panel.orderOut(nil) }
-        }
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            // Permission requests belong to first-launch setup, never a workspace switch.
-            if CGPreflightScreenCaptureAccess() { surfaces = (try? await prepare()) ?? [] }
-        }
+        let surfaces = await capture.run(timeout: 0.15, operation: prepare) ?? []
+        defer { surfaces.forEach { $0.panel.orderOut(nil) } }
         trace("outgoing captured")
+        try Task.checkCancellation()
+        surfaces.forEach { $0.panel.orderFrontRegardless() }
+        if !surfaces.isEmpty { CATransaction.flush() }
         // Never leave a snapshot covering the desktop if capture stalls.
         let panels = surfaces.map(\.panel)
-        watchdog = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { _ in
+        let watchdog = Task { @MainActor in
+            try await Task.sleep(for: .seconds(max(0, captureDeadline + 0.18 - CACurrentMediaTime())))
             panels.forEach { $0.orderOut(nil) }
         }
+        defer { watchdog.cancel() }
         let actualDestination = try await switchWorkspace()
         trace("engine switched")
         var nextStack = stack
         let direction = nextStack.direction(from: source, to: actualDestination)
         stack = nextStack
         UserDefaults.standard.set(stack.workspaces, forKey: "workspaceStack")
-        guard direction != 0, !surfaces.isEmpty else { return false }
-        // Refresh after showing the overlays: OpenTile may have had no visible
-        // windows in the initial shareable-content list. Exclude panel IDs too.
-        // Discover content while the window server presents the new layout,
-        // rather than adding discovery latency after the settling interval.
-        async let refreshedContent = SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        try await Task.sleep(nanoseconds: 80_000_000)
-        guard let content = try? await refreshedContent else { return false }
-        trace("content refreshed")
-        let panelIDs = Set(panels.map { CGWindowID($0.windowNumber) })
-        let excluded = content.windows.filter {
-            $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier || panelIDs.contains($0.windowID)
+        try Task.checkCancellation()
+        guard direction != 0, !surfaces.isEmpty, CACurrentMediaTime() < captureDeadline,
+              panels.allSatisfy(\.isVisible) else { return false }
+        let incoming = await capture.run(timeout: captureDeadline - CACurrentMediaTime()) {
+            try await self.captureIncoming(surfaces)
         }
-        var captures: [@MainActor () async throws -> CGImage] = []
-        for surface in surfaces {
-            guard let display = content.displays.first(where: { $0.displayID == surface.displayID }) else { return false }
-            let filter = SCContentFilter(display: display, excludingWindows: excluded)
-            captures.append {
-                try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: surface.configuration)
-            }
-        }
-        guard let incoming = try? await Self.captureSnapshots(captures),
+        try Task.checkCancellation()
+        guard let incoming, incoming.count == surfaces.count,
               panels.allSatisfy(\.isVisible) else { return false }
         trace("incoming captured")
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -118,7 +137,31 @@ import OpenTileCore
         }
     }
 
-    private func prepare() async throws -> [Surface] {
+    private static func captureIncomingSurfaces(_ surfaces: [Surface]) async throws -> [CGImage] {
+        // Refresh after showing the overlays: they may be absent from the initial
+        // content list. Discover while the window server presents the new layout.
+        async let refreshedContent = SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        let content = try await refreshedContent
+        let panelIDs = Set(surfaces.map { CGWindowID($0.panel.windowNumber) })
+        let excluded = content.windows.filter {
+            $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier || panelIDs.contains($0.windowID)
+        }
+        var captures: [@MainActor () async throws -> CGImage] = []
+        for surface in surfaces {
+            guard let display = content.displays.first(where: { $0.displayID == surface.displayID }) else { return [] }
+            let filter = SCContentFilter(display: display, excludingWindows: excluded)
+            captures.append {
+                try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: surface.configuration)
+            }
+        }
+        return try await captureSnapshots(captures)
+    }
+
+    private static func prepareSurfaces() async throws -> [Surface] {
+        // Permission requests belong to first-launch setup, never a workspace switch.
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              CGPreflightScreenCaptureAccess() else { return [] }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         var surfaces: [Surface] = []
@@ -160,8 +203,6 @@ import OpenTileCore
         for (surface, image) in zip(surfaces, images) {
             surface.layer.sublayers!.first!.contents = image
         }
-        surfaces.forEach { $0.panel.orderFrontRegardless() }
-        CATransaction.flush()
         return surfaces
     }
 }
