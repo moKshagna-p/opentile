@@ -216,22 +216,6 @@ struct GestureTests {
         #expect((Edge.top.preview(in: rect)) == (CGRect(x: -1000, y: -200, width: 800, height: 300)))
     }
     @Test
-    func testInsertionForEveryAxisAndEdge() {
-        for layout in ["h_tiles", "v_tiles"] {
-            for edge in Edge.allCases {
-                let commands = InsertionPlan(source: 1, target: 2, targetLayout: layout, edge: edge).commands
-                #expect((commands.prefix(3)) == ([["layout", "--window-id", "1", "floating"], ["focus", "--window-id", "2"], ["layout", "--window-id", "1", "tiling"]]))
-                let joins = commands.filter { $0.first == "join-with" }
-                #expect((joins.count) == ((layout == "h_tiles") == edge.horizontal ? 0 : 1))
-                if let join = joins.first { #expect((join.last) == (layout == "h_tiles" ? "left" : "up")) }
-                let moves = commands.filter { $0.first == "move" }
-                #expect((moves.count) == (edge.before ? 1 : 0))
-                if let move = moves.first { #expect((move.last) == (edge.horizontal ? "left" : "up")) }
-                #expect((commands.last) == (["focus", "--window-id", "1"]))
-            }
-        }
-    }
-    @Test
     func testCenterSwapAndEdgeInsertionZones() {
         let rect = CGRect(x: -800, y: -200, width: 800, height: 400)
         #expect((DropAction.hitTest(CGPoint(x: -400, y: 0), in: rect)) == (.swap))

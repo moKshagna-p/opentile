@@ -183,6 +183,59 @@ import Testing
         #expect(focus.windowOrNil === initialFocus)
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func insertPlacesTheSourceBesideTheTargetInOneChange(alongParent: Bool, before: Bool) async throws {
+        let f = Fixture(count: 3)
+        defer { f.cleanup() }
+        let root = f.workspace.rootTilingContainer
+        let (source, target) = (f.windows[0], f.windows[2])
+        let targetWeight = target.getWeight(root.orientation)
+        let horizontal = (root.orientation == .h) == alongParent
+        try await performOpenTileInsert(source: f.endpoint(0), target: f.endpoint(2), horizontal: horizontal, before: before,
+                                        resolve: { f.resolve($0) }, isLive: { _ in true })
+        let pair: [UInt32] = before ? [1, 3] : [3, 1]
+        #expect(f.workspace.allLeafWindowsRecursive.map(\.windowId) == [2] + pair)
+        if alongParent {
+            #expect(source.parent === root && target.parent === root)
+        } else {
+            let container = try #require(target.parent as? TilingContainer)
+            #expect(source.parent === container && container.parent === root)
+            #expect(container.orientation == root.orientation.opposite && container.layout == .tiles)
+            #expect(container.getWeight(root.orientation) == targetWeight)
+        }
+        #expect(focus.windowOrNil === source)
+    }
+
+    @Test(arguments: [false, true])
+    func insertBesideAStackedNeighbourSurvivesNormalization(before: Bool) async throws {
+        var f = Fixture(count: 1)
+        defer { f.cleanup() }
+        let root = f.workspace.rootTilingContainer
+        let pair = TilingContainer(parent: root, adaptiveWeight: 1, root.orientation.opposite, .tiles, index: INDEX_BIND_LAST)
+        for id in [2, 3] as [UInt32] {
+            f.windows.append(TestWindow(id: id, f.app, lastFloatingSize: nil, parent: pair, adaptiveWeight: 1, index: INDEX_BIND_LAST))
+        }
+        // [1 | [2 / 3]]: dropping 2 on 3's side edge must give [1 | 2 | 3], not a re-stacked pair.
+        try await performOpenTileInsert(source: f.endpoint(1), target: f.endpoint(2), horizontal: root.orientation == .h, before: before,
+                                        resolve: { f.resolve($0) }, isLive: { _ in true })
+        f.workspace.normalizeContainers() // The session normalizes after the change.
+        let live = f.workspace.rootTilingContainer
+        #expect(f.windows[1].parent === live && f.windows[2].parent === live)
+        #expect(f.workspace.allLeafWindowsRecursive.map(\.windowId) == (before ? [1, 2, 3] : [1, 3, 2]))
+    }
+
+    @Test func insertRejectsAStaleTargetWithoutMutating() async {
+        let f = Fixture()
+        defer { f.cleanup() }
+        let order = f.workspace.allLeafWindowsRecursive.map(\.windowId)
+        do {
+            try await performOpenTileInsert(source: f.endpoint(0), target: f.endpoint(1, id: 999), horizontal: true, before: true,
+                                            resolve: { f.resolve($0) }, isLive: { _ in true })
+            Issue.record("Stale insertion target accepted")
+        } catch { #expect(error is OpenTileSwapFailure) }
+        #expect(f.workspace.allLeafWindowsRecursive.map(\.windowId) == order)
+    }
+
     @Test func cancelledBeforeSessionDoesNotResolveOrMutate() async {
         let f = Fixture()
         defer { f.cleanup() }

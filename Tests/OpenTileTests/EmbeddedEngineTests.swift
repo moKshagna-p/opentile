@@ -49,18 +49,4 @@ struct EmbeddedEngineTests {
             #expect((summary?.applications) == ([]))
         }
     }
-
-    @Test
-    func testTransportOnlyUsesSiblingCLI() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let app = directory.appendingPathComponent("OpenTile")
-        #expect(AeroSpace.locate(executableURL: app) == nil)
-        let cli = directory.appendingPathComponent("aerospace")
-        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: cli)
-        #expect(AeroSpace.locate(executableURL: app) == nil)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
-        #expect((AeroSpace.locate(executableURL: app)?.executable) == (cli))
-    }
 }

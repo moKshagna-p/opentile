@@ -126,10 +126,10 @@ extension DirectSwapTests {
             #expect(result.targets.map(\.endpoint.id) == [2])
         }
 
-        @Test func cancellationAfterAnEmbeddedReadNeverFallsBackToTheCLI() async {
-            let cli = AeroSpace(executable: URL(fileURLWithPath: "/missing-cli"))
+        @Test func cancellationAfterAnEmbeddedReadNeverFallsBack() async {
+            let engine = AeroSpace(execute: { _ in throw AeroSpace.Failure(message: "fallback reached") })
             let task = Task { @MainActor in
-                try await cli.snapshot(on: DispatchQueue(label: "snapshot-test"), read: {
+                try await engine.snapshot(read: {
                     withUnsafeCurrentTask { $0?.cancel() }
                     return nil
                 })
@@ -138,12 +138,12 @@ extension DirectSwapTests {
             catch { #expect(error is CancellationError) }
         }
 
-        @Test func cancelledReadNeverStartsTheCLI() async {
-            let cli = AeroSpace(executable: URL(fileURLWithPath: "/missing-cli"))
+        @Test func cancelledReadNeverStartsDiscovery() async {
+            let engine = AeroSpace(execute: { _ in throw AeroSpace.Failure(message: "fallback reached") })
             var reads = 0
             let task = Task { @MainActor in
                 withUnsafeCurrentTask { $0?.cancel() }
-                return try await cli.snapshot(on: DispatchQueue(label: "snapshot-test"), read: {
+                return try await engine.snapshot(read: {
                     reads += 1
                     return nil
                 })
@@ -153,30 +153,26 @@ extension DirectSwapTests {
             #expect(reads == 0)
         }
 
-        @Test func embeddedSnapshotDoesNotNeedAWorkingCLI() async throws {
+        @Test func embeddedSnapshotSkipsCommandDiscovery() async throws {
             let f = Fixture()
             defer { f.cleanup() }
             let snapshot = try #require(f.read(f.windows.map { f.info($0.windowId) }))
-            let result = try await AeroSpace(executable: URL(fileURLWithPath: "/missing-cli"))
-                .snapshot(on: DispatchQueue(label: "snapshot-test"), read: { snapshot })
+            let result = try await AeroSpace(execute: { _ in throw AeroSpace.Failure(message: "fallback reached") })
+                .snapshot(read: { snapshot })
             #expect(result.source.tile.id == 1)
             #expect(result.targets.map(\.tile.id) == [2, 3])
         }
 
-        @Test func unavailableEmbeddedSnapshotUsesTheExistingCLI() async throws {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: directory) }
-            let executable = directory.appendingPathComponent("aerospace")
-            try Data("#!/bin/sh\nprintf 'snapshot fallback reached' >&2\nexit 7\n".utf8).write(to: executable)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        @Test func unavailableEmbeddedSnapshotFallsBackToEngineCommands() async throws {
+            var commands: [[String]] = []
             do {
-                _ = try await AeroSpace(executable: executable)
-                    .snapshot(on: DispatchQueue(label: "snapshot-test"), read: { nil })
-                Issue.record("Failed CLI accepted")
+                _ = try await AeroSpace(execute: { commands.append($0); throw AeroSpace.Failure(message: "snapshot fallback reached") })
+                    .snapshot(read: { nil })
+                Issue.record("Failed fallback accepted")
             } catch let error as AeroSpace.Failure {
                 #expect(error.message == "snapshot fallback reached")
             }
+            #expect(commands.first?.prefix(2) == ["list-windows", "--focused"])
         }
     }
 }

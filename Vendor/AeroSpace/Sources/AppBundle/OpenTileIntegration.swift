@@ -33,6 +33,61 @@ struct OpenTileSwapFailure: LocalizedError {
     resolve: @MainActor (UInt32) -> Window? = { Window.get(byId: $0) },
     isLive: @MainActor (Window) -> Bool = isLiveOpenTileSwapWindow,
 ) async throws {
+    try await performOpenTileChange(source: source, target: target, resolve: resolve, isLive: isLive) {
+        swapWindows(mruDominant: $0, $1)
+    }
+}
+
+/// Moves the source beside the target in one tree mutation, replacing the
+/// float, focus, re-tile, join and move commands that could stop halfway.
+@MainActor public func insertOpenTileWindow(
+    source: OpenTileSwapEndpoint, target: OpenTileSwapEndpoint, horizontal: Bool, before: Bool,
+) async throws {
+    try Task.checkCancellation()
+    guard let token = RunSessionGuard.isServerEnabled else { throw OpenTileSwapFailure() }
+    try await runLightSession(.globalObserver("OpenTile insert"), token) {
+        try await performOpenTileInsert(source: source, target: target, horizontal: horizontal, before: before)
+    }
+}
+
+@MainActor func performOpenTileInsert(
+    source: OpenTileSwapEndpoint,
+    target: OpenTileSwapEndpoint,
+    horizontal: Bool,
+    before: Bool,
+    resolve: @MainActor (UInt32) -> Window? = { Window.get(byId: $0) },
+    isLive: @MainActor (Window) -> Bool = isLiveOpenTileSwapWindow,
+) async throws {
+    try await performOpenTileChange(source: source, target: target, resolve: resolve, isLive: isLive) {
+        insertWindow($0, beside: $1, orientation: horizontal ? .h : .v, before: before)
+    }
+}
+
+/// Wraps the target, as join-with does, when its parent runs the other way.
+@MainActor func insertWindow(_ window: Window, beside target: Window, orientation: Orientation, before: Bool) {
+    window.unbindFromParent()
+    // Decide on the tree the old per-command sessions saw: removing the source can
+    // flatten the target's container, and normalization would later flip a pair built inside it.
+    target.nodeWorkspace?.normalizeContainers()
+    let parent = (target.parent as? TilingContainer).orDie("A validated target lost its parent")
+    let index = target.ownIndex.orDie("A validated target lost its parent")
+    if parent.orientation == orientation {
+        window.bind(to: parent, adaptiveWeight: WEIGHT_AUTO, index: before ? index : index + 1)
+    } else {
+        let binding = target.unbindFromParent()
+        let container = TilingContainer(parent: parent, adaptiveWeight: binding.adaptiveWeight, orientation, .tiles, index: binding.index)
+        target.bind(to: container, adaptiveWeight: WEIGHT_AUTO, index: 0)
+        window.bind(to: container, adaptiveWeight: WEIGHT_AUTO, index: before ? 0 : INDEX_BIND_LAST)
+    }
+}
+
+@MainActor private func performOpenTileChange(
+    source: OpenTileSwapEndpoint,
+    target: OpenTileSwapEndpoint,
+    resolve: @MainActor (UInt32) -> Window?,
+    isLive: @MainActor (Window) -> Bool,
+    apply: @MainActor (Window, Window) -> Void,
+) async throws {
     try Task.checkCancellation()
     guard source.id != target.id, source.workspace == target.workspace,
           let sourceID = UInt32(exactly: source.id), let targetID = UInt32(exactly: target.id),
@@ -76,7 +131,7 @@ struct OpenTileSwapFailure: LocalizedError {
 
     guard sourceWindow.focusWindow() else { throw OpenTileSwapFailure() }
     resetClosedWindowsCache()
-    swapWindows(mruDominant: sourceWindow, targetWindow)
+    apply(sourceWindow, targetWindow)
 }
 
 @MainActor private func isLiveOpenTileSwapWindow(_ window: Window) -> Bool {
@@ -103,7 +158,7 @@ public struct OpenTileCommandFailure: LocalizedError {
         case .failure(let err): throw OpenTileCommandFailure(message: err.msg)
     }
     guard let token = RunSessionGuard.isServerEnabled(orIsEnableCommand: command) else {
-        throw OpenTileCommandFailure(message: "The window manager is disabled. Enable it to switch workspaces.")
+        throw OpenTileCommandFailure(message: "The window manager is disabled. Enable it to manage windows.")
     }
     let result = try await runLightSession(.socketServer(command.args), token) {
         // Session preparation can suspend in non-cancellable focus callbacks.
