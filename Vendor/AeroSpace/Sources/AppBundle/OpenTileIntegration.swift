@@ -65,8 +65,11 @@ struct OpenTileSwapFailure: LocalizedError {
 
 /// Wraps the target, as join-with does, when its parent runs the other way.
 @MainActor func insertWindow(_ window: Window, beside target: Window, orientation: Orientation, before: Bool) {
-    guard let parent = target.parent as? TilingContainer else { return }
     window.unbindFromParent()
+    // Decide on the tree the old per-command sessions saw: removing the source can
+    // flatten the target's container, and normalization would later flip a pair built inside it.
+    target.nodeWorkspace?.normalizeContainers()
+    let parent = (target.parent as? TilingContainer).orDie("A validated target lost its parent")
     let index = target.ownIndex.orDie("A validated target lost its parent")
     if parent.orientation == orientation {
         window.bind(to: parent, adaptiveWeight: WEIGHT_AUTO, index: before ? index : index + 1)

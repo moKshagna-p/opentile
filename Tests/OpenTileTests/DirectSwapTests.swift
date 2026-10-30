@@ -206,6 +206,24 @@ import Testing
         #expect(focus.windowOrNil === source)
     }
 
+    @Test(arguments: [false, true])
+    func insertBesideAStackedNeighbourSurvivesNormalization(before: Bool) async throws {
+        var f = Fixture(count: 1)
+        defer { f.cleanup() }
+        let root = f.workspace.rootTilingContainer
+        let pair = TilingContainer(parent: root, adaptiveWeight: 1, root.orientation.opposite, .tiles, index: INDEX_BIND_LAST)
+        for id in [2, 3] as [UInt32] {
+            f.windows.append(TestWindow(id: id, f.app, lastFloatingSize: nil, parent: pair, adaptiveWeight: 1, index: INDEX_BIND_LAST))
+        }
+        // [1 | [2 / 3]]: dropping 2 on 3's side edge must give [1 | 2 | 3], not a re-stacked pair.
+        try await performOpenTileInsert(source: f.endpoint(1), target: f.endpoint(2), horizontal: root.orientation == .h, before: before,
+                                        resolve: { f.resolve($0) }, isLive: { _ in true })
+        f.workspace.normalizeContainers() // The session normalizes after the change.
+        let live = f.workspace.rootTilingContainer
+        #expect(f.windows[1].parent === live && f.windows[2].parent === live)
+        #expect(f.workspace.allLeafWindowsRecursive.map(\.windowId) == (before ? [1, 2, 3] : [1, 3, 2]))
+    }
+
     @Test func insertRejectsAStaleTargetWithoutMutating() async {
         let f = Fixture()
         defer { f.cleanup() }
