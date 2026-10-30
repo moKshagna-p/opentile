@@ -653,15 +653,19 @@ final class WorkspaceBarButton: NSButton {
             powerSource = source
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
+        // Volume is read only when CoreAudio reports a change: battery updates
+        // re-render the bar often, and each read is a round trip to the audio server.
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self, self.running, self.generation == version else { return }
             self.observeAudioDevice()
+            self.sampleSound()
             self.renderStatus()
         }
         audioListener = listener
         var address = Self.audioAddress(kAudioHardwarePropertyDefaultOutputDevice)
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
         observeAudioDevice()
+        sampleSound()
         let timer = Timer(fire: Date(timeIntervalSince1970: (floor(Date().timeIntervalSince1970 / 60) + 1) * 60), interval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.renderStatus() }
         }
@@ -677,7 +681,9 @@ final class WorkspaceBarButton: NSButton {
         uploadRate = NetworkTraffic.format(rates.up)
         trafficHistory.append(min(1, log10(max(0, rates.down + rates.up) + 1) / 6))
         if trafficHistory.count > 18 { trafficHistory.removeFirst(trafficHistory.count - 18) }
-        trafficText = "↓ \(downloadRate)  ↑ \(uploadRate)"
+        let text = "↓ \(downloadRate)  ↑ \(uploadRate)"
+        guard text != trafficText else { return }
+        trafficText = text
         for button in trafficButtons {
             button.title = trafficText
             button.setAccessibilityLabel("Download \(NetworkTraffic.format(rates.down)), upload \(NetworkTraffic.format(rates.up))")
@@ -742,7 +748,6 @@ final class WorkspaceBarButton: NSButton {
 
     private func renderStatus() {
         guard running, !sleeping else { return }
-        sampleSound()
         var battery: String?
         var batteryFraction: Double = 0
         var charging = false

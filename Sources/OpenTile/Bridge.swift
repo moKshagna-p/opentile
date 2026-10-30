@@ -9,7 +9,10 @@ final class TouchBridge {
     private static let lock = NSLock()
     private static var frames: [Frame] = []
     private static var accepting = false
+    private static var engaged = false
+    private static var gate = TouchFrameGate()
     private static var onFrames: (() -> Void)?
+    private static let modifierMask: CGEventFlags = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
     private var device: MTDeviceRef?
 
     func start(onFrames: @escaping () -> Void) -> Bool {
@@ -19,6 +22,8 @@ final class TouchBridge {
         Self.lock.lock()
         Self.frames = []
         Self.accepting = true
+        Self.engaged = false
+        Self.gate = TouchFrameGate()
         Self.onFrames = onFrames
         Self.lock.unlock()
         MTRegisterContactFrameCallback(device, { _, touches, count, time, _ in
@@ -31,7 +36,10 @@ final class TouchBridge {
                 }
             }
             TouchBridge.lock.lock()
-            if TouchBridge.accepting {
+            let admitted = TouchBridge.accepting && TouchBridge.gate.admits(count: contacts.count, time: time, engaged: TouchBridge.engaged) {
+                !CGEventSource.flagsState(.combinedSessionState).intersection(TouchBridge.modifierMask).isEmpty
+            }
+            if admitted {
                 if TouchBridge.frames.isEmpty {
                     DispatchQueue.main.async {
                         TouchBridge.lock.lock()
@@ -51,6 +59,13 @@ final class TouchBridge {
         })
         MTDeviceStart(device, 0)
         return true
+    }
+
+    /// Set by the main thread while a gesture or drawing needs every frame.
+    func setEngaged(_ engaged: Bool) {
+        Self.lock.lock()
+        Self.engaged = engaged
+        Self.lock.unlock()
     }
 
     func drain() -> [Frame] {
