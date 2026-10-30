@@ -126,26 +126,6 @@ public enum Edge: String, CaseIterable {
     }
 }
 
-public struct InsertionPlan {
-    public let commands: [[String]]
-    public init(source: Int, target: Int, targetLayout: String, edge: Edge) {
-        let horizontal = targetLayout == "h_tiles"
-        let previous = horizontal ? "left" : "up"
-        var result = [["layout", "--window-id", "\(source)", "floating"],
-                      ["focus", "--window-id", "\(target)"],
-                      ["layout", "--window-id", "\(source)", "tiling"]]
-        // AeroSpace inserts after the most recently focused tile in its parent.
-        if horizontal != edge.horizontal {
-            result.append(["join-with", "--window-id", "\(source)", previous])
-        }
-        if edge.before {
-            result.append(["move", "--window-id", "\(source)", edge.horizontal ? "left" : "up"])
-        }
-        result.append(["focus", "--window-id", "\(source)"])
-        commands = result
-    }
-}
-
 public enum DropAction: Equatable {
     case swap, insert(Edge)
     public static func hitTest(_ point: CGPoint, in rect: CGRect) -> DropAction? {

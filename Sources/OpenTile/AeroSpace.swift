@@ -12,6 +12,10 @@ struct Tile: Decodable {
     }
 }
 
+extension Tile {
+    var endpoint: OpenTileSwapEndpoint { OpenTileSwapEndpoint(id: id, pid: pid, workspace: workspace, layout: layout) }
+}
+
 struct WindowTile {
     let tile: Tile
     let frame: CGRect
@@ -109,37 +113,12 @@ struct AeroSpace {
     }
 
     @MainActor func swap(source: Tile, target: Tile) async throws {
-        try await swapOpenTileWindows(
-            source: OpenTileSwapEndpoint(id: source.id, pid: source.pid, workspace: source.workspace, layout: source.layout),
-            target: OpenTileSwapEndpoint(id: target.id, pid: target.pid, workspace: target.workspace, layout: target.layout))
+        try await swapOpenTileWindows(source: source.endpoint, target: target.endpoint)
     }
 
     @MainActor func insert(source: Tile, target: Tile, edge: Edge) async throws {
-        let current = try await tiles(["--workspace", source.workspace])
-        guard current.contains(where: { $0.id == source.id && ["h_tiles", "v_tiles"].contains($0.layout) }),
-              current.contains(where: { $0.id == target.id && ["h_tiles", "v_tiles"].contains($0.layout) }) else {
-            throw Failure(message: "The workspace changed. Start the gesture again.")
-        }
-        do {
-            try await run(["layout", "--window-id", "\(source.id)", "floating"])
-            // Removing the source can normalize the tree and change the target's orientation.
-            guard let updated = try await tiles(["--workspace", source.workspace]).first(where: { $0.id == target.id }), ["h_tiles", "v_tiles"].contains(updated.layout) else {
-                throw Failure(message: "The destination is no longer tiled.")
-            }
-            for command in InsertionPlan(source: source.id, target: target.id, targetLayout: updated.layout, edge: edge).commands.dropFirst() { try await run(command) }
-        } catch {
-            // Best effort recovery: never silently leave the window floating after a failed insertion.
-            do {
-                let existing = try await tiles(["--workspace", source.workspace]).first(where: { $0.id == source.id })
-                if existing?.layout == "floating" {
-                    try await run(["layout", "--window-id", "\(source.id)", "tiling"])
-                } else if existing == nil {
-                    throw Failure(message: "The source window is no longer in its workspace.")
-                }
-            }
-            catch { throw Failure(message: "Insertion and recovery failed. In AeroSpace, focus the window and run ‘layout tiling’. Original tile order may have changed.") }
-            throw Failure(message: "Insertion failed; the window was returned to tiling. Original tile order may have changed. \(error.localizedDescription)")
-        }
+        try await insertOpenTileWindow(source: source.endpoint, target: target.endpoint,
+                                       horizontal: edge.horizontal, before: edge.before)
     }
 
     private static func frame(_ tile: Tile) -> CGRect? {
