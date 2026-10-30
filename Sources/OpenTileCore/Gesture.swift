@@ -15,6 +15,29 @@ public enum GestureEvent: Equatable {
     case resizeBegan(Double), resized(Double)
 }
 
+/// Decides which trackpad frames the main thread needs. A lone finger moving the
+/// pointer with no modifier held cannot start a gesture or a drawing, so those
+/// frames are skipped unless a gesture is already engaged. Finger-count changes
+/// always pass, so the recognizer still sees every touch begin and end.
+public struct TouchFrameGate {
+    private var lastCount = 0
+    private var modifiersTime = -Double.infinity
+    private var modifiersHeld = false
+    public init() {}
+
+    /// `readModifiers` runs at most every 50 ms for frames that would otherwise be skipped.
+    public mutating func admits(count: Int, time: Double, engaged: Bool, readModifiers: () -> Bool) -> Bool {
+        let changed = count != lastCount
+        lastCount = count
+        if engaged || changed || count >= 2 { return true }
+        if !(time - modifiersTime < 0.05 && time >= modifiersTime) {
+            modifiersHeld = readModifiers()
+            modifiersTime = time
+        }
+        return modifiersHeld
+    }
+}
+
 /// A deliberate two-finger pinch followed by a short hold arms the drag.
 /// After release/cancel, all fingers must lift before another gesture can begin.
 public struct GestureRecognizer {
@@ -27,6 +50,9 @@ public struct GestureRecognizer {
     private var holdPoint = CGPoint.zero
     private var lastTime: Double = -.infinity
     public init() {}
+
+    /// No pinch is in progress, so a lone finger cannot change this recognizer.
+    public var isIdle: Bool { phase == .idle }
 
     public mutating func cancel() -> GestureEvent? {
         let active = phase == .dragging || phase == .resizing

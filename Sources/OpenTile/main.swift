@@ -86,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var latestPoint = CGPoint.zero
     private var cursor = CGPoint.zero
     private var lastFrame = ProcessInfo.processInfo.systemUptime
+    private var lastTrustCheck = -Double.infinity
     private var destination: (WindowTile, DropAction)?
     private let ghost = Outline(color: .secondaryLabelColor)
     private let preview = Outline(color: .systemTeal)
@@ -246,12 +247,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func tick() {
         guard enabled else { return }
-        guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
+        // The trust check costs a TCC lookup; once a second still notices revocation promptly.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastTrustCheck >= 1 || now < lastTrustCheck {
+            lastTrustCheck = now
+            guard AXIsProcessTrusted() else { disable(); status("Accessibility permission was removed"); return }
+        }
         let frames = bridge.drain()
-        if !frames.isEmpty { lastFrame = ProcessInfo.processInfo.systemUptime }
+        if !frames.isEmpty { lastFrame = now }
         defer {
-            polling.settle(idleFor: ProcessInfo.processInfo.systemUptime - lastFrame,
-                           drawingActive: drawing.needsPolling || appDrawing.needsPolling)
+            let drawingActive = drawing.needsPolling || appDrawing.needsPolling
+            bridge.setEngaged(!recognizer.isIdle || drawingActive || snapshot != nil || readingWorkspace || committing)
+            polling.settle(idleFor: ProcessInfo.processInfo.systemUptime - lastFrame, drawingActive: drawingActive)
         }
         if phoneGesture || (phonePad.hasTouches && snapshot == nil && !readingWorkspace && !drawing.needsPolling && !appDrawing.needsPolling) {
             _ = recognizer.cancel()

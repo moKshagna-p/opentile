@@ -260,4 +260,47 @@ struct GestureTests {
         }
         #expect((SwapPlan(source: 1, target: 1, distance: 0).commands) == ([]))
     }
+
+    @Test
+    func pointerMovementSkipsLoneFingerFramesButKeepsTouchBoundaries() {
+        var gate = TouchFrameGate()
+        var reads = 0
+        func admit(_ count: Int, at time: Double) -> Bool {
+            gate.admits(count: count, time: time, engaged: false) { reads += 1; return false }
+        }
+        #expect(admit(1, at: 0))
+        #expect(!admit(1, at: 0.01))
+        #expect(!admit(1, at: 0.02))
+        #expect(reads == 1, "a skipped frame reuses the recent modifier read")
+        #expect(!admit(1, at: 0.08))
+        #expect(reads == 2)
+        #expect(admit(0, at: 0.1))
+        #expect(!admit(0, at: 0.11))
+    }
+
+    @Test
+    func gestureFramesAlwaysReachTheRecognizer() {
+        var gate = TouchFrameGate()
+        func admit(_ count: Int, at time: Double, engaged: Bool = false, held: Bool = false) -> Bool {
+            gate.admits(count: count, time: time, engaged: engaged) { held }
+        }
+        for (i, count) in [2, 2, 3, 2].enumerated() { #expect(admit(count, at: Double(i) * 0.01)) }
+        #expect(admit(1, at: 0.1), "a partial lift is a count change")
+        #expect(admit(1, at: 0.11, engaged: true))
+        #expect(admit(1, at: 0.17, held: true), "a held modifier may start a drawing")
+    }
+
+    @Test
+    func recognizerReportsIdleOnlyWithoutAPinch() {
+        var r = GestureRecognizer()
+        #expect(r.isIdle)
+        #expect(r.update([Contact(id: 1, x: 0.5, y: 0.5)], time: 0) == nil)
+        #expect(r.isIdle)
+        #expect(r.update(contacts(), time: 0.1) == nil)
+        #expect(!r.isIdle)
+        _ = r.cancel()
+        #expect(!r.isIdle, "a cancelled pinch waits for every finger to lift")
+        #expect(r.update([], time: 0.2) == nil)
+        #expect(r.isIdle)
+    }
 }
