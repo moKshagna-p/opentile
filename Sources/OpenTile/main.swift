@@ -459,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func switchWorkspace(_ request: WorkspaceRequest) {
-        guard !committing, let aerospace = AeroSpace.locate() else { return }
+        guard !committing else { return }
         cancel()
         let destination: String?
         if case .workspace(let name) = request { destination = name } else { destination = nil }
@@ -474,23 +474,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 guard let source = openTileWorkspaces().first(where: \.isFocused)?.name else { throw AeroSpace.Failure(message: "Cannot read the current workspace") }
                 let animated = try await self.workspaceTransition.perform(from: source, to: destination) {
-                    _ = try await self.workspaceCommand(aerospace, request.arguments)
+                    _ = try await AeroSpace.command(request.arguments)
                     guard let actual = openTileWorkspaces().first(where: \.isFocused)?.name else { throw AeroSpace.Failure(message: "Cannot read the destination workspace") }
                     return actual
                 }
                 self.status("Workspace · \(animated ? "ready" : "ready (no animation)")")
             } catch {
                 self.status(error.localizedDescription)
-            }
-        }
-    }
-
-    private func workspaceCommand(_ aerospace: AeroSpace, _ arguments: [String]) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            worker.async {
-                continuation.resume(with: Result {
-                    String(decoding: try aerospace.run(arguments), as: UTF8.self)
-                })
             }
         }
     }
@@ -574,15 +564,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func reloadEngine() {
-        guard let engine = AeroSpace.locate() else { status("Bundled CLI is missing"); return }
-        worker.async { [weak self] in
-            let result = Result { try engine.run(["reload-config"]) }
-            DispatchQueue.main.async {
-                switch result {
-                case .success: self?.status("Window manager configuration reloaded")
-                case .failure(let error): self?.status(error.localizedDescription)
-                }
-            }
+        Task { @MainActor [weak self] in
+            do {
+                _ = try await AeroSpace.command(["reload-config"])
+                self?.status("Window manager configuration reloaded")
+            } catch { self?.status(error.localizedDescription) }
         }
     }
 
