@@ -172,7 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let quit = menu.addItem(withTitle: "Quit OpenTile", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         item.menu = menu
-        splitMenuBar.selectWorkspace = { [weak self] in self?.switchWorkspace($0) }
+        // Workspace controls stay usable while gestures are paused.
+        splitMenuBar.selectWorkspace = { [weak self] in self?.workspaceRequests.append(.workspace($0)) }
         splitMenuBar.install(in: menu)
         globalKeys = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             if event.type == .flagsChanged { self?.wakeGestureProcessing() }
