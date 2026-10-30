@@ -158,7 +158,7 @@ public struct OpenTileCommandFailure: LocalizedError {
         case .failure(let err): throw OpenTileCommandFailure(message: err.msg)
     }
     guard let token = RunSessionGuard.isServerEnabled(orIsEnableCommand: command) else {
-        throw OpenTileCommandFailure(message: "The window manager is disabled. Enable it to switch workspaces.")
+        throw OpenTileCommandFailure(message: "The window manager is disabled. Enable it to manage windows.")
     }
     let result = try await runLightSession(.socketServer(command.args), token) {
         // Session preparation can suspend in non-cancellable focus callbacks.
