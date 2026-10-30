@@ -493,13 +493,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ghost.hide(); preview.hide()
     }
     private func cancel() {
+        // Escape is monitored globally; only report a cancellation that interrupted something.
+        let active = snapshot != nil || readingWorkspace || phoneGesture || drawing.needsPolling || appDrawing.needsPolling
         phonePad.cancelInput()
         drawing.cancel()
         appDrawing.cancel()
         generation += 1
-        _ = recognizer.cancel()
+        let recognizing = recognizer.cancel() != nil
         clearPreview()
-        if !committing { status("Cancelled — layout unchanged") }
+        if !committing && (active || recognizing) { status("Cancelled — layout unchanged") }
     }
 
     private func handlePhone(_ event: PhonePadEvent) {
