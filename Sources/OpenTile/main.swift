@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var appDrawingOwnedFrames = false
     @MainActor private lazy var workspaceTransition = WorkspaceTransition()
     private var recognizer = GestureRecognizer()
-    private let worker = DispatchQueue(label: "OpenTile.AeroSpace")
+    private let aerospace = AeroSpace()
     private let polling = GesturePolling()
     private var globalKeys: Any?
     private var localKeys: Any?
@@ -218,7 +218,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 status("Accessibility is off — open Permission Setup from the menu")
                 return false
             }
-            guard AeroSpace.locate() != nil else { status("Bundled window manager CLI is missing — rebuild OpenTile"); return false }
             guard bridge.start(onFrames: { [weak self] in self?.wakeGestureProcessing() }) else { status("No supported trackpad found"); return false }
             return true
         }) else { return }
@@ -296,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func begin(_ point: CGPoint, resize: Bool = false) {
-        guard !committing, let aerospace = AeroSpace.locate() else { return }
+        guard !committing else { return }
         generation += 1
         let token = generation
         resizing = resize
@@ -307,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapshotTask?.cancel()
         snapshotTask = Task { @MainActor in
             let result: Result<DesktopSnapshot, Error>
-            do { result = .success(try await aerospace.snapshot(on: worker)) }
+            do { result = .success(try await self.aerospace.snapshot()) }
             catch { result = .failure(error) }
             guard self.generation == token, self.enabled || (self.phoneGesture && self.phonePad.isConnected) else { return }
             self.snapshotTask = nil
@@ -368,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func releaseResize() {
-        guard let snapshot, let aerospace = AeroSpace.locate() else {
+        guard let snapshot else {
             clearPreview()
             if !committing { status("Workspace not ready — resize unchanged") }
             return
@@ -379,23 +378,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         committing = true
         toggleItem.isEnabled = false
         status("Resizing window…")
-        worker.async {
-            let result = Result { try aerospace.resize(source: snapshot.source.tile, plan: plan) }
-            DispatchQueue.main.async {
+        Task { @MainActor in
+            defer {
                 self.committing = false
                 self.toggleItem.isEnabled = true
-                switch result {
-                case .success: self.status("Window resized · ready for another gesture")
-                case .failure(let error): self.status(error.localizedDescription); NSSound.beep()
-                }
             }
+            do {
+                try await self.aerospace.resize(source: snapshot.source.tile, plan: plan)
+                self.status("Window resized · ready for another gesture")
+            } catch { self.status(error.localizedDescription); NSSound.beep() }
         }
     }
 
     private func release() {
         generation += 1 // invalidates a snapshot still being read
         if resizing { releaseResize(); return }
-        guard let snapshot, let (target, action) = destination, let aerospace = AeroSpace.locate() else {
+        guard let snapshot, let (target, action) = destination else {
             clearPreview()
             if !committing { status("No destination selected — layout unchanged") }
             return
@@ -412,22 +410,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .failure(let error): self.status(error.localizedDescription); NSSound.beep()
             }
         }
-        if action == .swap {
-            Task { @MainActor in
-                do {
-                    try await aerospace.swap(source: snapshot.source.tile, target: target.tile)
-                    complete(.success(()))
-                } catch { complete(.failure(error)) }
-            }
-        } else {
-            worker.async {
-                let result = Result {
-                    if case .insert(let edge) = action {
-                        try aerospace.insert(source: snapshot.source.tile, target: target.tile, edge: edge)
-                    }
+        Task { @MainActor in
+            do {
+                switch action {
+                case .swap: try await self.aerospace.swap(source: snapshot.source.tile, target: target.tile)
+                case .insert(let edge): try await self.aerospace.insert(source: snapshot.source.tile, target: target.tile, edge: edge)
                 }
-                DispatchQueue.main.async { complete(result) }
-            }
+                complete(.success(()))
+            } catch { complete(.failure(error)) }
         }
     }
 

@@ -1,85 +1,81 @@
-import Darwin
 import Foundation
 import Testing
+import OpenTileCore
 @testable import OpenTile
 
-@Suite(.serialized)
-struct AeroSpaceTransportTests {
-    private func withCLI(_ script: String, test: (AeroSpace, URL) throws -> Void) throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let executable = directory.appendingPathComponent("aerospace")
-        try Data("#!/bin/sh\n\(script)\n".utf8).write(to: executable)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-        try test(AeroSpace(executable: executable), directory)
-    }
+/// Records engine commands and answers `list-windows` from a mutable layout.
+@MainActor private final class FakeEngine {
+    var layouts: [Int: String]
+    var failing: String?
+    var commands: [[String]] = []
 
-    @Test func immediateExitPreservesOutputAndArguments() throws {
-        try withCLI("printf '%s' \"$1\"; printf ' stderr' >&2") { cli, _ in
-            for _ in 0..<20 {
-                let output = try cli.run(["hello world"])
-                #expect(String(decoding: output, as: UTF8.self) == "hello world stderr")
-            }
-        }
-    }
+    init(_ layouts: [Int: String]) { self.layouts = layouts }
 
-    @Test func waitsForDelayedOutput() throws {
-        try withCLI("/bin/sleep 0.05\nprintf 'finished'") { cli, _ in
-            let output = try cli.run([])
-            #expect(String(decoding: output, as: UTF8.self) == "finished")
-        }
-    }
-
-    @Test func nonzeroExitPreservesError() throws {
-        try withCLI("printf 'command failed\\n' >&2\nexit 7") { cli, _ in
-            do {
-                try cli.run([])
-                Issue.record("A failed command must throw")
-            } catch let error as AeroSpace.Failure {
-                #expect(error.message == "command failed")
-            }
-        }
-    }
-
-    @Test func largeOutputDoesNotBlockCompletion() throws {
-        try withCLI("exec /usr/bin/head -c 262144 /dev/zero") { cli, _ in
-            let output = try cli.run([])
-            #expect(output == Data(repeating: 0, count: 262144))
-        }
-    }
-
-    @Test func launchFailureThrows() {
-        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        #expect(throws: (any Error).self) { try AeroSpace(executable: missing).run([]) }
-    }
-
-    @Test(arguments: [false, true])
-    func timeoutStopsAndReapsProcess(ignoresTermination: Bool) throws {
-        let script = """
-        \(ignoresTermination ? "trap '' TERM" : "")
-        printf '%s' "$$" > "$1"
-        exec /bin/sleep 30
-        """
-        try withCLI(script) { cli, directory in
-            let pidFile = directory.appendingPathComponent("pid")
-            defer {
-                if let text = try? String(contentsOf: pidFile, encoding: .utf8),
-                   let pid = Int32(text), kill(pid, 0) == 0 {
-                    kill(pid, SIGKILL)
+    var aerospace: AeroSpace {
+        AeroSpace(execute: { [self] arguments in
+            commands.append(arguments)
+            if arguments.first == failing { throw AeroSpace.Failure(message: "\(arguments[0]) failed") }
+            switch arguments.first {
+            case "list-windows":
+                let rows = layouts.keys.sorted().map {
+                    "{\"window-id\":\($0),\"app-pid\":1,\"workspace\":\"A\",\"window-parent-container-layout\":\"\(layouts[$0]!)\"}"
                 }
+                return "[\(rows.joined(separator: ","))]"
+            case "layout":
+                layouts[Int(arguments[2])!] = arguments[3] == "floating" ? "floating" : "h_tiles"
+                return ""
+            default: return ""
             }
-            do {
-                try cli.run([pidFile.path])
-                Issue.record("A timed-out command must throw")
-            } catch let error as AeroSpace.Failure {
-                #expect(error.message == "AeroSpace timed out. Check that it is running.")
-            }
-            let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
-            let result = kill(pid, 0)
-            let error = errno
-            #expect(result == -1)
-            #expect(error == ESRCH)
+        })
+    }
+
+    var mutations: [[String]] { commands.filter { $0.first != "list-windows" } }
+}
+
+private func tile(_ id: Int, _ layout: String = "h_tiles") -> Tile {
+    Tile(id: id, pid: 1, workspace: "A", layout: layout)
+}
+
+@Suite(.serialized)
+@MainActor struct AeroSpaceTransportTests {
+    @Test func resizeRunsTheEngineCommandAfterValidation() async throws {
+        let engine = FakeEngine([1: "h_tiles", 2: "h_tiles"])
+        let plan = ResizePlan(frame: CGRect(x: 0, y: 0, width: 800, height: 600), layout: "h_tiles", change: 0.5)
+        try await engine.aerospace.resize(source: tile(1), plan: plan)
+        #expect(engine.mutations == [try #require(plan.command(windowID: 1))])
+    }
+
+    @Test func resizeRejectsAChangedLayoutWithoutMutating() async {
+        let engine = FakeEngine([1: "v_tiles", 2: "v_tiles"])
+        let plan = ResizePlan(frame: CGRect(x: 0, y: 0, width: 800, height: 600), layout: "h_tiles", change: 0.5)
+        await #expect(throws: AeroSpace.Failure.self) { try await engine.aerospace.resize(source: tile(1), plan: plan) }
+        #expect(engine.mutations.isEmpty)
+    }
+
+    @Test func insertRunsThePlanThroughTheEngine() async throws {
+        let engine = FakeEngine([1: "h_tiles", 2: "h_tiles"])
+        try await engine.aerospace.insert(source: tile(1), target: tile(2), edge: .left)
+        #expect(engine.mutations == InsertionPlan(source: 1, target: 2, targetLayout: "h_tiles", edge: .left).commands)
+    }
+
+    @Test func failedInsertReturnsTheWindowToTiling() async {
+        let engine = FakeEngine([1: "h_tiles", 2: "h_tiles"])
+        engine.failing = "focus"
+        do {
+            try await engine.aerospace.insert(source: tile(1), target: tile(2), edge: .left)
+            Issue.record("A failed insertion must throw")
+        } catch {
+            #expect(error.localizedDescription.hasPrefix("Insertion failed; the window was returned to tiling."))
         }
+        #expect(engine.mutations.last == ["layout", "--window-id", "1", "tiling"])
+        #expect(engine.layouts[1] == "h_tiles")
+    }
+
+    @Test func insertRejectsAChangedWorkspaceWithoutMutating() async {
+        let engine = FakeEngine([1: "h_tiles"])
+        await #expect(throws: AeroSpace.Failure.self) {
+            try await engine.aerospace.insert(source: tile(1), target: tile(2), edge: .left)
+        }
+        #expect(engine.mutations.isEmpty)
     }
 }
