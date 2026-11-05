@@ -1,7 +1,33 @@
+import Foundation
 import Testing
 @testable import OpenTile
 
 struct BarStatusMetricsTests {
+    @Test func pomodoroCyclesThroughFocusAndBreaks() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        var timer = Pomodoro()
+        #expect(timer.remaining(at: t0) == 25 * 60)
+        timer.start(at: t0)
+        #expect(timer.phase == .focus && timer.running)
+        timer.pause(at: t0 + 600)
+        #expect(!timer.running && timer.remaining(at: t0 + 9999) == 900)
+        timer.start(at: t0 + 1000)
+        #expect(timer.remaining(at: t0 + 1000) == 900)
+        #expect(Pomodoro.clock(timer.remaining(at: t0 + 1000.5)) == "15:00")
+        timer.finish(at: t0 + 1900)
+        #expect(timer.phase == .shortBreak && timer.remaining(at: t0 + 1900) == 300)
+        timer.finish(at: t0 + 2200)
+        #expect(timer.phase == .idle && !timer.running)
+        for _ in 0..<2 { timer.start(at: t0); timer.finish(at: t0); timer.finish(at: t0) }
+        timer.start(at: t0)
+        timer.finish(at: t0)
+        #expect(timer.completedFocus == 4 && timer.phase == .longBreak)
+        timer.reset()
+        #expect(timer.phase == .idle && timer.completedFocus == 4)
+        timer.focusLength = 50 * 60
+        #expect(timer.remaining(at: t0) == 50 * 60)
+    }
+
     @Test func batteryFillTracksChargeAndClampsInvalidValues() {
         #expect(BatteryIndicator.fraction(current: 71, maximum: 100) == 0.71)
         #expect(BatteryIndicator.fraction(current: 35, maximum: 50) == 0.7)

@@ -26,9 +26,23 @@ struct CodexBarStatusTests {
         let snapshot = try CodexBarSnapshot.decode(data)
         #expect(!snapshot.showUsed)
         #expect(snapshot.visibleProviders.count == 2)
-        #expect(snapshot.navbarProviders.map(\.id) == ["codex"])
+        #expect(snapshot.providers(activeFirst: "claude").map(\.id) == ["claude", "codex"])
+        #expect(snapshot.providers(activeFirst: nil).map(\.id) == ["codex", "claude"])
         #expect(snapshot.visibleProviders[0].windows?[0].percent(showUsed: false) == 89)
         #expect(snapshot.visibleProviders[1].windows == nil)
+    }
+
+    @Test func providerWhoseUsageGrewBecomesActive() throws {
+        func snapshot(codex: Int, claude: Int) throws -> CodexBarSnapshot {
+            try CodexBarSnapshot.decode(Data(#"{"schemaVersion":1,"host":{},"providers":[{"id":"codex","name":"Codex","enabled":true,"windows":[{"label":"Session","usedPercent":\#(codex)}]},{"id":"claude","name":"Claude","enabled":true,"windows":[{"label":"Session","usedPercent":\#(claude)}]}]}"#.utf8))
+        }
+        let start = try snapshot(codex: 10, claude: 30)
+        #expect(CodexBarSnapshot.activeProvider(from: nil, to: start) == nil)
+        #expect(CodexBarSnapshot.activeProvider(from: start, to: try snapshot(codex: 10, claude: 34)) == "claude")
+        #expect(CodexBarSnapshot.activeProvider(from: start, to: try snapshot(codex: 12, claude: 30)) == "codex")
+        // A session reset frees capacity; it is not activity.
+        #expect(CodexBarSnapshot.activeProvider(from: start, to: try snapshot(codex: 0, claude: 30)) == nil)
+        #expect(CodexBarSnapshot.activeProvider(from: start, to: start) == nil)
     }
 
     @Test func usageRespectsFillPreferenceAndClampsValues() throws {

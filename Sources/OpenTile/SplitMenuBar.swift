@@ -35,14 +35,64 @@ final class BarPanel: NSPanel {
 final class SplitBarSurface: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSGradient(colorsAndLocations:
-            (NSColor(calibratedWhite: 0.105, alpha: 0), 0),
-            (NSColor(calibratedWhite: 0.08, alpha: 0.96), 0.3),
-            (NSColor(calibratedWhite: 0.055, alpha: 1), 1))?
+            (NSColor(calibratedWhite: 0, alpha: 0), 0),
+            (NSColor(calibratedWhite: 0, alpha: 0.96), 0.3),
+            (NSColor(calibratedWhite: 0, alpha: 1), 1))?
             .draw(in: bounds, angle: 90)
     }
 }
 
-private final class SplitBarStatusButton: NSButton {
+enum SplitBarStyle {
+    static let primary = NSColor(calibratedWhite: 0.93, alpha: 1)
+    static let secondary = NSColor(calibratedWhite: 0.56, alpha: 1)
+    static let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    static var rounded: NSFont {
+        let base = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        return base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 12) } ?? base
+    }
+
+    /// Values read bright and their labels or units dim, so the eye lands on the numbers.
+    static func text(_ runs: [(String, Bool)]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for (string, bright) in runs {
+            result.append(NSAttributedString(string: string, attributes: [
+                .font: font, .foregroundColor: bright ? primary : secondary]))
+        }
+        return result
+    }
+
+    /// "2.0 KB/s" -> bright number, dim unit.
+    static func rate(_ arrow: String, _ value: String) -> [(String, Bool)] {
+        let parts = value.split(separator: " ", maxSplits: 1).map(String.init)
+        return [(arrow + " ", false), (parts[0], true)] + (parts.count > 1 ? [(" " + parts[1], false)] : [])
+    }
+}
+
+extension NSImage {
+    func tinted(_ color: NSColor) -> NSImage {
+        NSImage(size: size, flipped: false) { rect in
+            self.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+    }
+}
+
+/// Groups related status items into one capsule; it never takes clicks from the buttons above it.
+final class SplitBarGroupBackground: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.withAlphaComponent(0.075).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+    }
+}
+
+private class SplitBarStatusButton: NSButton {
+    var styledTitle: NSAttributedString? {
+        didSet { if let styledTitle { attributedTitle = styledTitle }; needsDisplay = true }
+    }
+    var imageTint: NSColor?
     private var hovered = false
     private var hoverArea: NSTrackingArea?
 
@@ -60,28 +110,27 @@ private final class SplitBarStatusButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         if hovered || isHighlighted {
-            NSColor.white.withAlphaComponent(isHighlighted ? 0.14 : hovered ? 0.085 : 0.055).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
+            let pill = bounds.insetBy(dx: 1, dy: 1)
+            NSColor.white.withAlphaComponent(isHighlighted ? 0.16 : 0.09).setFill()
+            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         }
         // Drawing the cell here adds AppKit's larger grey pressed highlight over our capsule.
-        let color = NSColor(calibratedWhite: 0.86, alpha: 1)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font ?? .systemFont(ofSize: 11),
-                                                         .foregroundColor: color]
-        let textSize = (title as NSString).size(withAttributes: attributes)
+        let color = SplitBarStyle.primary
+        let text = styledTitle ?? NSAttributedString(string: title, attributes: [
+            .font: font ?? SplitBarStyle.font, .foregroundColor: color])
+        let textSize = text.size()
         let imageSize = image?.size ?? .zero
         let imageWidth = image == nil ? 0 : min(25, imageSize.width)
-        let spacing: CGFloat = image != nil && !title.isEmpty ? 5 : 0
+        let spacing: CGFloat = image != nil && text.length > 0 ? 5 : 0
         let contentWidth = imageWidth + spacing + textSize.width
         var x = (bounds.width - contentWidth) / 2
         if let image {
             let height = imageSize.width > 0 ? min(18, imageSize.height * imageWidth / imageSize.width) : 0
-            let tinted = image.withSymbolConfiguration(.init(paletteColors: [color])) ?? image
-            tinted.draw(in: NSRect(x: x, y: (bounds.height - height) / 2,
-                                   width: imageWidth, height: height))
+            image.tinted(imageTint ?? color).draw(in: NSRect(x: x, y: (bounds.height - height) / 2,
+                                                             width: imageWidth, height: height))
             x += imageWidth + spacing
         }
-        (title as NSString).draw(at: NSPoint(x: x, y: (bounds.height - textSize.height) / 2),
-                                 withAttributes: attributes)
+        text.draw(at: NSPoint(x: x, y: (bounds.height - textSize.height) / 2))
     }
 }
 
@@ -89,33 +138,36 @@ enum SplitBarMenuVisual {
     case activity([Double])
     case level(Double)
     case day(Int)
+    case none
 }
 
 /// A compact status card inside a native menu, leaving the actionable item to AppKit.
 private final class SplitBarMenuHeader: NSView {
     private var visual: SplitBarMenuVisual
     private let icon: NSImageView
+    private let iconPlate = NSView(frame: NSRect(x: 18, y: 18, width: 32, height: 32))
     private let heading: NSTextField
     private let detail: NSTextField
     private let valueLabel: NSTextField
     override var isFlipped: Bool { true }
 
     init(title: String, subtitle: String, symbol: String, value: String,
-         visual: SplitBarMenuVisual) {
+         visual: SplitBarMenuVisual, artwork: NSImage? = nil, logo: NSImage? = nil) {
         self.visual = visual
         icon = NSImageView(frame: NSRect(x: 7, y: 7, width: 18, height: 18))
         heading = NSTextField(labelWithString: title)
         detail = NSTextField(labelWithString: subtitle)
         valueLabel = NSTextField(labelWithString: value)
         super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 110))
-        let iconPlate = NSView(frame: NSRect(x: 18, y: 18, width: 32, height: 32))
         iconPlate.wantsLayer = true
         iconPlate.layer?.cornerRadius = 10
+        iconPlate.layer?.masksToBounds = true
         iconPlate.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
         addSubview(iconPlate)
-        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         icon.contentTintColor = .labelColor
+        icon.imageScaling = .scaleProportionallyUpOrDown
         iconPlate.addSubview(icon)
+        setIcon(symbol: symbol, artwork: artwork, logo: logo)
 
         heading.frame = NSRect(x: 59, y: 19, width: 197, height: 16)
         heading.font = .systemFont(ofSize: 11, weight: .bold)
@@ -129,28 +181,47 @@ private final class SplitBarMenuHeader: NSView {
         detail.toolTip = subtitle
         addSubview(detail)
 
-        valueLabel.frame = NSRect(x: 18, y: 62, width: 163, height: 32)
-        valueLabel.font = .systemFont(ofSize: 24, weight: .semibold)
         valueLabel.lineBreakMode = .byTruncatingTail
         valueLabel.toolTip = value
         addSubview(valueLabel)
+        fitValue()
         setAccessibilityLabel("\(title), \(value), \(subtitle)")
     }
 
     func update(title: String, subtitle: String, symbol: String, value: String,
-                visual: SplitBarMenuVisual) {
+                visual: SplitBarMenuVisual, artwork: NSImage? = nil, logo: NSImage? = nil) {
         self.visual = visual
-        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        setIcon(symbol: symbol, artwork: artwork, logo: logo)
         heading.stringValue = title
         detail.stringValue = subtitle
         detail.toolTip = subtitle
         valueLabel.stringValue = value
         valueLabel.toolTip = value
+        fitValue()
         setAccessibilityLabel("\(title), \(value), \(subtitle)")
         needsDisplay = true
     }
 
     required init?(coder: NSCoder) { nil }
+
+    /// Long values (track titles) step down from 24pt to 15pt before truncating,
+    /// and take the full card width when there is no graphic beside them.
+    private func fitValue() {
+        let width: CGFloat = { if case .none = visual { return 244 } else { return 163 } }()
+        var size: CGFloat = 24
+        while size > 15, (valueLabel.stringValue as NSString).size(withAttributes:
+                [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width > width {
+            size -= 1
+        }
+        valueLabel.font = .systemFont(ofSize: size, weight: .semibold)
+        valueLabel.frame = NSRect(x: 18, y: 62, width: width, height: 32)
+    }
+
+    /// Artwork fills the plate edge to edge; a symbol sits centered inside it.
+    private func setIcon(symbol: String, artwork: NSImage?, logo: NSImage?) {
+        icon.image = artwork ?? logo ?? NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        icon.frame = artwork == nil ? NSRect(x: 7, y: 7, width: 18, height: 18) : iconPlate.bounds
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.labelColor.withAlphaComponent(0.045).setFill()
@@ -181,6 +252,8 @@ private final class SplitBarMenuHeader: NSView {
             (String(day) as NSString).draw(in: NSRect(x: 210, y: 66, width: 48, height: 23),
                 withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 17, weight: .semibold),
                                  .foregroundColor: NSColor.labelColor, .paragraphStyle: centeredText])
+        case .none:
+            break
         }
     }
 
@@ -194,12 +267,13 @@ private final class SplitBarMenuHeader: NSView {
 private final class SplitBarMetricRow: NSView {
     private let label: NSTextField
     private let metric: NSTextField
-    init(title: String, value: String, symbol: String) {
+    private let icon = NSImageView(frame: NSRect(x: 20, y: 6, width: 16, height: 16))
+    init(title: String, value: String, symbol: String, image: NSImage? = nil) {
         label = NSTextField(labelWithString: title)
         metric = NSTextField(labelWithString: value)
         super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 29))
-        let icon = NSImageView(frame: NSRect(x: 20, y: 6, width: 16, height: 16))
-        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        icon.image = image ?? NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = .secondaryLabelColor
         addSubview(icon)
 
@@ -216,7 +290,8 @@ private final class SplitBarMetricRow: NSView {
         setAccessibilityLabel("\(title), \(value)")
     }
 
-    func update(title: String, value: String) {
+    func update(title: String, value: String, image: NSImage? = nil) {
+        if let image { icon.image = image }
         label.stringValue = title
         metric.stringValue = value
         metric.toolTip = value
@@ -231,23 +306,29 @@ enum SplitBarDropdown {
         let title: String
         let value: String
         let symbol: String
+        var image: NSImage? = nil
     }
 
     @MainActor static func make(title: String, subtitle: String, symbol: String,
-                                value: String, visual: SplitBarMenuVisual,
-                                details: [Detail], settingsTitle: String,
+                                value: String, visual: SplitBarMenuVisual, artwork: NSImage? = nil,
+                                logo: NSImage? = nil, details: [Detail], extraViews: [NSView] = [], settingsTitle: String,
                                 settingsAction: Selector, target: AnyObject) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         let header = NSMenuItem()
         header.view = SplitBarMenuHeader(title: title, subtitle: subtitle, symbol: symbol,
-                                         value: value, visual: visual)
+                                         value: value, visual: visual, artwork: artwork, logo: logo)
         menu.addItem(header)
         menu.addItem(.separator())
         for detail in details {
             let item = NSMenuItem()
             item.view = SplitBarMetricRow(title: detail.title, value: detail.value,
-                                           symbol: detail.symbol)
+                                           symbol: detail.symbol, image: detail.image)
+            menu.addItem(item)
+        }
+        for view in extraViews {
+            let item = NSMenuItem()
+            item.view = view
             menu.addItem(item)
         }
         menu.addItem(.separator())
@@ -258,11 +339,50 @@ enum SplitBarDropdown {
     }
 
     @MainActor static func update(_ menu: NSMenu, title: String, subtitle: String, symbol: String,
-                                  value: String, visual: SplitBarMenuVisual, details: [Detail]) {
+                                  value: String, visual: SplitBarMenuVisual, artwork: NSImage? = nil,
+                                  logo: NSImage? = nil, details: [Detail]) {
         (menu.items.first?.view as? SplitBarMenuHeader)?.update(
-            title: title, subtitle: subtitle, symbol: symbol, value: value, visual: visual)
+            title: title, subtitle: subtitle, symbol: symbol, value: value, visual: visual,
+            artwork: artwork, logo: logo)
         for (item, detail) in zip(menu.items.dropFirst(2), details) {
-            (item.view as? SplitBarMetricRow)?.update(title: detail.title, value: detail.value)
+            (item.view as? SplitBarMetricRow)?.update(title: detail.title, value: detail.value, image: detail.image)
+        }
+    }
+}
+
+/// Traffic rates in fixed columns: numbers right-aligned, units left-aligned, so nothing shifts as rates change.
+private final class TrafficBarButton: SplitBarStatusButton {
+    var down = "0 B/s" { didSet { needsDisplay = true } }
+    var up = "0 B/s" { didSet { needsDisplay = true } }
+    private static func width(_ string: String) -> CGFloat {
+        ceil((string as NSString).size(withAttributes: [.font: SplitBarStyle.font]).width)
+    }
+    private static let arrow = width("↓ ")
+    private static let number = width("999.9")
+    private static let unit = width(" KB/s")
+    private static let gap: CGFloat = 10
+    static let contentWidth = 2 * (arrow + number + unit) + gap
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted {
+            let pill = bounds.insetBy(dx: 1, dy: 1)
+            NSColor.white.withAlphaComponent(0.16).setFill()
+            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+        }
+        var x = (bounds.width - Self.contentWidth) / 2
+        for (arrow, rate) in [("↓", down), ("↑", up)] {
+            let parts = rate.split(separator: " ", maxSplits: 1).map(String.init)
+            func draw(_ string: String, bright: Bool, at origin: CGFloat) {
+                let text = SplitBarStyle.text([(string, bright)])
+                text.draw(at: NSPoint(x: origin, y: (bounds.height - text.size().height) / 2))
+            }
+            draw(arrow, bright: false, at: x)
+            x += Self.arrow
+            let number = parts.first ?? ""
+            draw(number, bright: true, at: x + Self.number - Self.width(number))
+            x += Self.number
+            draw(" " + (parts.count > 1 ? parts[1] : ""), bright: false, at: x)
+            x += Self.unit + Self.gap
         }
     }
 }
@@ -276,10 +396,11 @@ final class WorkspaceBarSelection: NSView {
     required init?(coder: NSCoder) { nil }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.white.withAlphaComponent(0.12).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 7, yRadius: 7).fill()
-        NSColor.white.withAlphaComponent(0.18).setStroke()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7).stroke()
+        let radius = bounds.height / 2
+        NSColor.white.withAlphaComponent(0.14).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        NSColor.white.withAlphaComponent(0.1).setStroke()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius - 0.5, yRadius: radius - 0.5).stroke()
     }
 }
 
@@ -308,18 +429,19 @@ final class WorkspaceBarButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         if hovered || isHighlighted {
+            let pill = bounds.insetBy(dx: 1, dy: 1)
             NSColor.white.withAlphaComponent(isHighlighted ? 0.11 : active ? 0.045 : 0.075).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         }
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font!, .foregroundColor: active ? NSColor.white : NSColor(calibratedWhite: 0.85, alpha: 1)
+            .font: font!, .foregroundColor: active ? NSColor.white : SplitBarStyle.secondary
         ]
         let size = (title as NSString).size(withAttributes: attributes)
-        (title as NSString).draw(at: NSPoint(x: 8, y: (bounds.height - size.height) / 2), withAttributes: attributes)
-        var x = ceil(size.width) + 12
+        (title as NSString).draw(at: NSPoint(x: 9, y: (bounds.height - size.height) / 2), withAttributes: attributes)
+        var x = ceil(size.width) + 13
         for icon in appIcons {
             icon.draw(in: NSRect(x: x, y: (bounds.height - 20) / 2, width: 20, height: 20),
-                      from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                      from: .zero, operation: .sourceOver, fraction: active ? 1 : 0.8, respectFlipped: true, hints: nil)
             x += 22
         }
     }
@@ -352,7 +474,7 @@ final class WorkspaceBarButton: NSButton {
             let button = buttons[workspace.name] ?? WorkspaceBarButton(title: workspace.name, target: target, action: action)
             if buttons[workspace.name] == nil {
                 button.isBordered = false
-                button.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+                button.font = SplitBarStyle.rounded
                 button.identifier = NSUserInterfaceItemIdentifier(workspace.name)
                 buttons[workspace.name] = button
                 addSubview(button)
@@ -423,7 +545,24 @@ final class WorkspaceBarButton: NSButton {
     private var trafficTimer: Timer?
     private var traffic = NetworkTraffic()
     private var trafficText = "↓ 0 B/s  ↑ 0 B/s"
-    private var trafficButtons: [NSButton] = []
+    private var trafficButtons: [TrafficBarButton] = []
+    private var pomodoro: Pomodoro = {
+        var timer = Pomodoro()
+        let defaults = UserDefaults.standard
+        for (key, path) in [("pomodoroFocusMinutes", \Pomodoro.focusLength),
+                            ("pomodoroShortBreakMinutes", \Pomodoro.shortBreakLength),
+                            ("pomodoroLongBreakMinutes", \Pomodoro.longBreakLength)] {
+            let minutes = defaults.integer(forKey: key)
+            if minutes > 0 { timer[keyPath: path] = TimeInterval(minutes * 60) }
+        }
+        return timer
+    }()
+    private var pomodoroSound: Bool {
+        get { UserDefaults.standard.object(forKey: "pomodoroSound") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "pomodoroSound") }
+    }
+    private var pomodoroTimer: Timer?
+    private var pomodoroButtons: [SplitBarStatusButton] = []
     private var network: NWPathMonitor?
     private var powerSource: CFRunLoopSource?
     private var audioListener: AudioObjectPropertyListenerBlock?
@@ -451,6 +590,11 @@ final class WorkspaceBarButton: NSButton {
     private let clockFormat: DateFormatter = {
         let format = DateFormatter()
         format.dateFormat = "EEE  HH:mm"
+        return format
+    }()
+    private let dayFormat: DateFormatter = {
+        let format = DateFormatter()
+        format.dateFormat = "EEE"
         return format
     }()
     private let clockTimeFormat: DateFormatter = {
@@ -562,11 +706,11 @@ final class WorkspaceBarButton: NSButton {
         return panel
     }
 
-    private func button(_ title: String, symbol: String? = nil, action: Selector) -> NSButton {
+    private func button(_ title: String, symbol: String? = nil, action: Selector) -> SplitBarStatusButton {
         let button = SplitBarStatusButton(title: title, target: self, action: action)
         button.isBordered = false
-        button.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
-        button.contentTintColor = .init(calibratedWhite: 0.85, alpha: 1)
+        button.font = SplitBarStyle.font
+        button.contentTintColor = SplitBarStyle.primary
         if let symbol { button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title); button.imagePosition = .imageLeading }
         return button
     }
@@ -603,7 +747,8 @@ final class WorkspaceBarButton: NSButton {
             if layout.statusWidth > 0 {
                 let usage = (container.subviews.first { $0 is CodexBarButton } as? CodexBarButton)
                     ?? CodexBarButton(status: codexBar)
-                usage.frame = CGRect(x: container.bounds.width - layout.statusWidth - 4, y: 3, width: layout.statusWidth, height: 22)
+                let width = layout.statusWidth >= 60 ? min(layout.statusWidth, usage.preferredWidth) : layout.statusWidth
+                usage.frame = CGRect(x: container.bounds.width - width - 6, y: 3, width: width, height: 22)
                 usage.update()
                 if usage.superview == nil { container.addSubview(usage) }
                 codexButtons.append(usage)
@@ -621,7 +766,8 @@ final class WorkspaceBarButton: NSButton {
     private func startStatus() {
         stopStatus()
         let version = generation
-        codexBar.onChange = { [weak self] in self?.codexButtons.forEach { $0.update() } }
+        // Re-layout, not just redraw: the capsule hugs the active provider's name and percentage.
+        codexBar.onChange = { [weak self] in self?.renderWorkspaces() }
         codexBar.start()
         if musicItem?.state == .on { music.start() }
         let monitor = NWPathMonitor()
@@ -636,6 +782,7 @@ final class WorkspaceBarButton: NSButton {
         }
         network = monitor
         monitor.start(queue: DispatchQueue(label: "OpenTile.menuBar.network", qos: .utility))
+        schedulePomodoro()
         updateTraffic()
         let trafficTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.updateTraffic() }
@@ -685,7 +832,8 @@ final class WorkspaceBarButton: NSButton {
         guard text != trafficText else { return }
         trafficText = text
         for button in trafficButtons {
-            button.title = trafficText
+            button.down = downloadRate
+            button.up = uploadRate
             button.setAccessibilityLabel("Download \(NetworkTraffic.format(rates.down)), upload \(NetworkTraffic.format(rates.up))")
         }
     }
@@ -719,6 +867,8 @@ final class WorkspaceBarButton: NSButton {
         traffic = NetworkTraffic()
         trafficHistory.removeAll()
         trafficButtons.removeAll()
+        pomodoroTimer?.invalidate(); pomodoroTimer = nil
+        pomodoroButtons.removeAll()
         if let source = powerSource { CFRunLoopSourceInvalidate(source) }
         powerSource = nil
         if let listener = audioListener {
@@ -768,57 +918,217 @@ final class WorkspaceBarButton: NSButton {
         batteryLevel = battery
         batteryCharging = charging
         batteryFill = batteryFraction
-        let presentation = "\(wifi)|\(sound)|\(battery ?? "")|\(clock)"
+        let presentation = "\(wifi)|\(sound)|\(battery ?? "")|\(clock)|\(pomodoro.phase)|\(pomodoro.running)"
         guard !showingStatusMenu else { return }
         guard renderedStatus != presentation else { return }
         renderedStatus = presentation
         trafficButtons.removeAll()
+        pomodoroButtons.removeAll()
         for pair in panels {
             let view = pair.right.contentView!
             let existingMusic = view.subviews.compactMap { $0 as? MusicBarView }.first
             view.subviews.filter { !($0 is MusicBarView) }.forEach { $0.removeFromSuperview() }
-            var modules: [NSButton] = []
             let networkButton = button("", symbol: wifi ? "wifi" : "network", action: #selector(showNetworkMenu(_:)))
             networkButton.toolTip = wifi ? "Wi-Fi details" : "Network details"
             networkButton.setAccessibilityLabel(networkButton.toolTip)
-            modules.append(networkButton)
-            let trafficButton = button(trafficText, action: #selector(showNetworkMenu(_:)))
+            let trafficButton = TrafficBarButton(title: "", target: self, action: #selector(showNetworkMenu(_:)))
+            trafficButton.isBordered = false
+            trafficButton.down = downloadRate
+            trafficButton.up = uploadRate
             trafficButton.toolTip = "Download / upload over Wi-Fi and Ethernet"
             trafficButton.setAccessibilityLabel(trafficText)
             trafficButtons.append(trafficButton)
-            modules.append(trafficButton)
             let soundButton = button("", symbol: soundMuted ? "speaker.slash" : "speaker.wave.2", action: #selector(showSoundMenu(_:)))
             soundButton.toolTip = sound
             soundButton.setAccessibilityLabel("Sound: \(sound)")
-            modules.append(soundButton)
+            if soundMuted { soundButton.imageTint = SplitBarStyle.secondary }
+            var power: [NSButton] = [soundButton]
             if let battery {
                 let batteryButton = button(battery, action: #selector(showBatteryMenu(_:)))
+                batteryButton.styledTitle = SplitBarStyle.text([("\(Int((batteryFraction * 100).rounded()))%", true)])
                 batteryButton.image = BatteryIndicator.image(fraction: batteryFraction)
                 batteryButton.imagePosition = .imageLeading
+                batteryButton.imageTint = charging ? .systemGreen : batteryFraction <= 0.2 ? .systemRed : nil
                 batteryButton.setAccessibilityLabel("Battery \(battery)")
-                modules.append(batteryButton)
+                power.append(batteryButton)
             }
-            modules.append(button(clock, action: #selector(showClockMenu(_:))))
+            let clockButton = button(clock, action: #selector(showClockMenu(_:)))
+            let now = Date()
+            clockButton.styledTitle = SplitBarStyle.text([(dayFormat.string(from: now) + "  ", false),
+                                                          (clockTimeFormat.string(from: now), true)])
+            let pomodoroButton = button("", symbol: "timer", action: #selector(showPomodoroMenu(_:)))
+            if pomodoro.phase != .idle {
+                pomodoroButton.styledTitle = pomodoroText(Date())
+                pomodoroButton.imageTint = pomodoro.phase == .focus ? .systemRed : .systemGreen
+            }
+            pomodoroButton.toolTip = "Pomodoro timer"
+            pomodoroButton.setAccessibilityLabel("Pomodoro timer")
+            pomodoroButtons.append(pomodoroButton)
             let appButton = button("", symbol: "square.grid.2x2", action: #selector(showMenu))
             appButton.setAccessibilityLabel("OpenTile menu")
             appButton.toolTip = "OpenTile menu"
-            modules.append(appButton)
-            var x = view.bounds.width - 8
-            for b in modules.reversed() {
-                b.sizeToFit()
-                let width = b === trafficButton ? 190 : max(25, b.frame.width + 16)
-                guard x - width >= 0 else { continue }
-                x -= width
-                b.frame = CGRect(x: x, y: 3, width: width, height: 22)
-                view.addSubview(b)
+            // Related items share a capsule; groups are separated by a gap rather than dividers.
+            let groups: [[NSButton]] = [[pomodoroButton], [networkButton, trafficButton], power, [clockButton], [appButton]]
+            var x = view.bounds.width - 6
+            for group in groups.reversed() {
+                let capsule = group.first !== appButton
+                let inset: CGFloat = capsule ? 5 : 0
+                let groupEnd = x
+                x -= inset
+                var placed = false
+                for b in group.reversed() {
+                    let width = b === trafficButton ? TrafficBarButton.contentWidth + 8 : Self.contentWidth(b) + 14
+                    guard x - width - inset >= 0 else { continue }
+                    if placed { x -= 2 }
+                    x -= width
+                    b.frame = CGRect(x: x, y: 3, width: width, height: 22)
+                    view.addSubview(b)
+                    placed = true
+                }
+                x -= inset
+                if placed, capsule {
+                    view.addSubview(SplitBarGroupBackground(frame: CGRect(x: x, y: 3, width: groupEnd - x, height: 22)),
+                                    positioned: .below, relativeTo: nil)
+                }
+                if !placed { x = groupEnd } else { x -= 8 }
             }
-            if musicItem?.state == .on, x >= 68 {
-                let musicView = existingMusic ?? MusicBarView(player: music, width: min(52, x - 16))
-                musicView.resize(to: min(52, x - 16))
+            if musicItem?.state == .on, x >= MusicBarView.width + 8 {
+                let musicView = existingMusic ?? MusicBarView(player: music)
+                musicView.frame.origin.x = x - MusicBarView.width
                 if musicView.superview == nil { view.addSubview(musicView) }
             }
-            if musicItem?.state != .on || x < 68 { existingMusic?.removeFromSuperview() }
+            if musicItem?.state != .on || x < MusicBarView.width + 8 { existingMusic?.removeFromSuperview() }
         }
+    }
+
+    /// Width of an item's icon and text, without padding.
+    private static func contentWidth(_ button: NSButton) -> CGFloat {
+        let text = (button as? SplitBarStatusButton)?.styledTitle?.size().width
+            ?? (button.title as NSString).size(withAttributes: [.font: button.font ?? SplitBarStyle.font]).width
+        let image = button.image.map { min(25, $0.size.width) } ?? 0
+        return ceil(image + text + (image > 0 && text > 0 ? 5 : 0))
+    }
+
+    // MARK: Pomodoro
+
+    private func pomodoroText(_ now: Date) -> NSAttributedString {
+        SplitBarStyle.text([(Pomodoro.clock(pomodoro.remaining(at: now)), pomodoro.running)])
+    }
+
+    /// Ticks once a second only while a phase is counting down.
+    private func schedulePomodoro() {
+        pomodoroTimer?.invalidate(); pomodoroTimer = nil
+        guard pomodoro.running, running, !sleeping else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tickPomodoro() }
+        }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        pomodoroTimer = timer
+    }
+
+    private func tickPomodoro() {
+        let now = Date()
+        if pomodoro.running, pomodoro.remaining(at: now) <= 0 {
+            let finishedFocus = pomodoro.phase == .focus
+            pomodoro.finish(at: now)
+            if pomodoroSound { NSSound(named: finishedFocus ? "Glass" : "Hero")?.play() }
+            schedulePomodoro()
+            renderStatus()
+            return
+        }
+        let text = pomodoroText(now)
+        pomodoroButtons.forEach { $0.styledTitle = text }
+    }
+
+    private var pomodoroHeading: String {
+        switch pomodoro.phase {
+        case .idle: "POMODORO"
+        case .focus: "FOCUS"
+        case .shortBreak: "SHORT BREAK"
+        case .longBreak: "LONG BREAK"
+        }
+    }
+
+    private func refreshPomodoroMenu(_ menu: NSMenu) {
+        let now = Date()
+        let subtitle = pomodoro.phase == .idle
+            ? "\(Int(pomodoro.focusLength / 60)) min focus · \(Int(pomodoro.shortBreakLength / 60)) min break"
+            : pomodoro.endsAt.map { "Ends at \(clockTimeFormat.string(from: $0))" } ?? "Paused"
+        let next = pomodoro.phase == .focus
+            ? ((pomodoro.completedFocus + 1).isMultiple(of: 4) ? "Long break" : "Short break") : "Focus"
+        SplitBarDropdown.update(menu, title: pomodoroHeading, subtitle: subtitle, symbol: "timer",
+            value: Pomodoro.clock(pomodoro.remaining(at: now)), visual: .level(pomodoro.progress(at: now)),
+            details: [.init(title: "Sessions done", value: "\(pomodoro.completedFocus)", symbol: "checkmark.circle"),
+                      .init(title: "Up next", value: next, symbol: "arrow.forward.circle")])
+        if let primary = menu.item(withTag: 1) {
+            primary.title = pomodoro.running ? "Pause" : pomodoro.phase == .idle ? "Start Focus" : "Resume"
+            primary.image = NSImage(systemSymbolName: pomodoro.running ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        }
+        menu.item(withTag: 2)?.isEnabled = pomodoro.phase != .idle
+    }
+
+    @objc private func showPomodoroMenu(_ sender: NSButton) {
+        let menu = SplitBarDropdown.make(title: pomodoroHeading, subtitle: "", symbol: "timer", value: "",
+            visual: .level(0), details: [.init(title: "Sessions done", value: "", symbol: "checkmark.circle"),
+                                         .init(title: "Up next", value: "", symbol: "arrow.forward.circle")],
+            settingsTitle: "Start Focus", settingsAction: #selector(togglePomodoro), target: self)
+        menu.items.last?.tag = 1
+        let reset = menu.addItem(withTitle: "Reset", action: #selector(resetPomodoro), keyEquivalent: "")
+        reset.target = self
+        reset.tag = 2
+        reset.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: nil)
+        menu.addItem(.separator())
+        let settings = menu.addItem(withTitle: "Timer Settings", action: nil, keyEquivalent: "")
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        let options = NSMenu()
+        for (kind, title, choices, current) in [
+            (1, "Focus", [15, 20, 25, 30, 45, 50, 60], pomodoro.focusLength),
+            (2, "Short Break", [3, 5, 10, 15], pomodoro.shortBreakLength),
+            (3, "Long Break", [10, 15, 20, 30], pomodoro.longBreakLength)
+        ] {
+            let minutes = Int(current / 60)
+            let item = options.addItem(withTitle: "\(title) — \(minutes) min", action: nil, keyEquivalent: "")
+            let lengths = NSMenu()
+            for choice in choices {
+                let option = lengths.addItem(withTitle: "\(choice) minutes", action: #selector(setPomodoroLength(_:)), keyEquivalent: "")
+                option.target = self
+                option.tag = kind * 1000 + choice
+                option.state = choice == minutes ? .on : .off
+            }
+            item.submenu = lengths
+        }
+        options.addItem(.separator())
+        let sound = options.addItem(withTitle: "Play Sound When a Phase Ends", action: #selector(togglePomodoroSound), keyEquivalent: "")
+        sound.target = self
+        sound.state = pomodoroSound ? .on : .off
+        settings.submenu = options
+        showStatus(menu, from: sender) { [weak self] in self?.refreshPomodoroMenu(menu) }
+    }
+
+    @objc private func togglePomodoro() {
+        if pomodoro.running { pomodoro.pause(at: Date()) } else { pomodoro.start(at: Date()) }
+        schedulePomodoro()
+        renderStatus()
+    }
+
+    @objc private func setPomodoroLength(_ sender: NSMenuItem) {
+        let minutes = sender.tag % 1000
+        let (key, path) = [1: ("pomodoroFocusMinutes", \Pomodoro.focusLength),
+                           2: ("pomodoroShortBreakMinutes", \Pomodoro.shortBreakLength),
+                           3: ("pomodoroLongBreakMinutes", \Pomodoro.longBreakLength)][sender.tag / 1000]!
+        pomodoro[keyPath: path] = TimeInterval(minutes * 60)
+        UserDefaults.standard.set(minutes, forKey: key)
+        renderedStatus = nil
+        renderStatus()
+    }
+
+    @objc private func togglePomodoroSound() { pomodoroSound.toggle() }
+
+    @objc private func resetPomodoro() {
+        pomodoro.reset()
+        schedulePomodoro()
+        renderStatus()
     }
 
     private func show(_ menu: NSMenu, from sender: NSButton) {

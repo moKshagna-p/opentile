@@ -40,9 +40,9 @@ Trackpad support is experimental and uses Apple's private `MultitouchSupport` fr
 
 ## Desktop options
 
-- **Split menu bar:** workspace buttons, app icons, and system controls. Set the native menu bar to auto-hide in macOS settings before enabling it.
+- **Split menu bar:** workspace buttons, app icons, system controls, and a Pomodoro timer with adjustable focus and break lengths. Set the native menu bar to auto-hide in macOS settings before enabling it.
 - **Wallpapers:** press **Control–Option–W** to browse `~/Pictures/Wallpapers`. Visible thumbnails take priority while browsing. Images apply to all connected displays; videos are converted to stills.
-- **Integrations:** optional [CodexBar](https://github.com/steipete/CodexBar) usage meters and Apple Music playback controls. Music requires Automation permission; artwork lookup may send track metadata to Apple's catalog.
+- **Integrations:** optional [CodexBar](https://github.com/steipete/CodexBar) usage meters, led by the provider you are using, and Apple Music playback controls. Music requires Automation permission; artwork lookup may send track metadata to Apple's catalog.
 
 **Phone Pad** is an experimental mobile companion in [PhonePad/](PhonePad/), available through development builds. It requires a separate mobile app and an HTTPS/WebSocket tunnel. Keep pairing QR codes private. Android has been tested on a physical device; iPhone flows and a dedicated security audit remain outstanding.
 

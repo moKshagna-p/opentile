@@ -23,12 +23,32 @@ struct CodexBarSnapshot: Decodable {
     let host: Host
     let providers: [Provider]
     var visibleProviders: [Provider] { providers.filter(\.enabled) }
-    var navbarProviders: [Provider] { visibleProviders.filter { $0.id != "claude" } }
     var showUsed: Bool { host.usageBarsShowUsed ?? false }
     static func decode(_ data: Data) throws -> Self {
         let snapshot = try JSONDecoder().decode(Self.self, from: data)
         guard snapshot.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
         return snapshot
+    }
+
+    /// The provider whose usage grew since the previous refresh. Resets (capacity going back up) don't count.
+    static func activeProvider(from old: CodexBarSnapshot?, to new: CodexBarSnapshot) -> String? {
+        guard let old else { return nil }
+        var best: (id: String, growth: Double)?
+        for provider in new.visibleProviders {
+            guard let before = old.providers.first(where: { $0.id == provider.id }) else { continue }
+            for window in provider.windows ?? [] {
+                guard let previous = before.windows?.first(where: { $0.label == window.label }),
+                      let now = window.percent(showUsed: true), let then = previous.percent(showUsed: true),
+                      now - then > (best?.growth ?? 0) else { continue }
+                best = (provider.id, now - then)
+            }
+        }
+        return best?.id
+    }
+
+    /// Enabled providers with the one in use first; the rest keep CodexBar's order.
+    func providers(activeFirst id: String?) -> [Provider] {
+        visibleProviders.filter { $0.id == id } + visibleProviders.filter { $0.id != id }
     }
 }
 
@@ -58,6 +78,8 @@ struct CodexBarRemainingUsage {
     private(set) var snapshot: CodexBarSnapshot?
     private(set) var message = "Connecting to CodexBar…"
     private(set) var updatedAt: Date?
+    private(set) var activeProviderID = UserDefaults.standard.string(forKey: "codexBarActiveProvider") ?? "claude"
+    var orderedProviders: [CodexBarSnapshot.Provider] { snapshot?.providers(activeFirst: activeProviderID) ?? [] }
     var onChange: (() -> Void)?
     private var timer: Timer?
     private var process: Process?
@@ -86,9 +108,7 @@ struct CodexBarRemainingUsage {
 
     func refresh() {
         guard running, process == nil else { return }
-        let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.steipete.codexbar")
-            ?? URL(fileURLWithPath: "/Applications/CodexBar.app")
-        let executable = app.appendingPathComponent("Contents/Helpers/CodexBarCLI")
+        let executable = Self.app.appendingPathComponent("Contents/Helpers/CodexBarCLI")
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             message = "Install CodexBar to see usage"
             onChange?()
@@ -118,6 +138,10 @@ struct CodexBarRemainingUsage {
                 guard let self, self.running, self.generation == version else { return }
                 self.process = nil
                 if let result {
+                    if let active = CodexBarSnapshot.activeProvider(from: self.snapshot, to: result) {
+                        self.activeProviderID = active
+                        UserDefaults.standard.set(active, forKey: "codexBarActiveProvider")
+                    }
                     self.snapshot = result
                     self.updatedAt = Date()
                     self.message = result.visibleProviders.isEmpty ? "Enable providers in CodexBar" : ""
@@ -127,6 +151,24 @@ struct CodexBarRemainingUsage {
                 self.onChange?()
             }
         }
+    }
+}
+
+extension CodexBarStatus {
+    static var app: URL {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.steipete.codexbar")
+            ?? URL(fileURLWithPath: "/Applications/CodexBar.app")
+    }
+
+    private static var logos: [String: NSImage] = [:]
+    /// CodexBar ships a monochrome SVG per provider; reuse it instead of bundling brand assets.
+    static func logo(for id: String) -> NSImage? {
+        if let cached = logos[id] { return cached }
+        guard let image = NSImage(contentsOf: app.appendingPathComponent("Contents/Resources/ProviderIcon-\(id).svg"))
+        else { return nil }
+        image.isTemplate = true
+        logos[id] = image
+        return image
     }
 }
 
@@ -144,7 +186,7 @@ struct WorkspaceBarLayout {
 
 @MainActor final class CodexBarButton: NSButton {
     let status: CodexBarStatus
-    private var popover: NSPopover?
+    private var dropdown: NSMenu?
     init(status: CodexBarStatus) {
         self.status = status
         super.init(frame: .zero)
@@ -161,126 +203,113 @@ struct WorkspaceBarLayout {
     func update() {
         toolTip = status.message.isEmpty ? "CodexBar · Remaining usage — click for details" : status.message
         needsDisplay = true
-        if popover?.isShown == true { popover?.contentViewController = detailController() }
+        if let dropdown { refresh(dropdown) }
     }
     override func draw(_ dirtyRect: NSRect) {
-        if isHighlighted {
-            NSColor.white.withAlphaComponent(0.12).setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
-        }
-        let providers = status.snapshot?.navbarProviders ?? []
-        guard bounds.width >= 130, !providers.isEmpty else {
+        // Same capsule language as the status groups on the right.
+        let pill = bounds.insetBy(dx: 1, dy: 0)
+        NSColor.white.withAlphaComponent(isHighlighted ? 0.16 : 0.075).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+        let providers = status.orderedProviders
+        guard bounds.width >= 60, !providers.isEmpty else {
             let symbol = NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: nil)
-            symbol?.draw(in: CGRect(x: (bounds.width - 16) / 2, y: 4, width: 16, height: 14))
+            symbol?.tinted(SplitBarStyle.primary).draw(in: CGRect(x: (bounds.width - 16) / 2, y: 4, width: 16, height: 14))
             return
         }
-        let count = min(providers.count, bounds.width >= 230 ? 2 : 1)
-        let cellWidth = bounds.width / CGFloat(count)
-        for (index, provider) in providers.prefix(count).enumerated() {
-            let x = CGFloat(index) * cellWidth + 9
+        let cellWidth = bounds.width
+        for provider in providers.prefix(1) {
+            let x: CGFloat = 10
             let color = provider.id == "claude" ? NSColor.systemOrange : NSColor.systemMint
             let usage = CodexBarRemainingUsage(window: provider.windows?.first)
             let percent = usage.percent
-            let ring = NSBezierPath(ovalIn: CGRect(x: x, y: 5, width: 12, height: 12))
-            ring.lineWidth = 2
+            let ring = NSBezierPath(ovalIn: CGRect(x: x - 1, y: 3, width: 16, height: 16))
+            ring.lineWidth = 1.75
             NSColor.white.withAlphaComponent(0.14).setStroke()
             ring.stroke()
+            CodexBarStatus.logo(for: provider.id)?.tinted(SplitBarStyle.primary)
+                .draw(in: CGRect(x: x + 2.5, y: 6.5, width: 9, height: 9))
             if let percent, percent > 0 {
-                let arc = usage.ringPath(center: CGPoint(x: x + 6, y: 11), radius: 6)
-                arc.lineWidth = 2
-                arc.lineCapStyle = .butt
+                let arc = usage.ringPath(center: CGPoint(x: x + 7, y: 11), radius: 8)
+                arc.lineWidth = 1.75
+                arc.lineCapStyle = .round
                 color.withAlphaComponent(status.message.isEmpty ? 1 : 0.4).setStroke()
                 arc.stroke()
             }
             let name = NSAttributedString(string: provider.name, attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.75)])
-            name.draw(in: CGRect(x: x + 20, y: 5, width: cellWidth - 65, height: 13))
+                .font: SplitBarStyle.font, .foregroundColor: SplitBarStyle.secondary])
             let value = NSAttributedString(string: percent.map { "\(Int($0.rounded()))%" } ?? "—", attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold),
-                .foregroundColor: NSColor.white])
-            value.draw(at: CGPoint(x: CGFloat(index + 1) * cellWidth - value.size().width - 9, y: 5))
+                .font: SplitBarStyle.font, .foregroundColor: SplitBarStyle.primary])
+            let nameWidth = min(name.size().width, cellWidth - value.size().width - 40)
+            let textY = (bounds.height - value.size().height) / 2
+            name.draw(in: CGRect(x: x + 21, y: textY, width: nameWidth, height: value.size().height))
+            value.draw(at: CGPoint(x: x + 21 + nameWidth + 5, y: textY))
         }
     }
 
-    @objc private func showDetails() {
-        if popover?.isShown == true { popover?.performClose(nil); return }
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = detailController()
-        self.popover = popover
-        popover.show(relativeTo: bounds, of: self, preferredEdge: .minY)
+    /// Ring, name and percentage plus even 10pt padding; the bar never stretches the capsule past this.
+    var preferredWidth: CGFloat {
+        guard let provider = status.orderedProviders.first else { return 32 }
+        let percent = CodexBarRemainingUsage(window: provider.windows?.first).percent
+        let text = [provider.name, percent.map { "\(Int($0.rounded()))%" } ?? "—"]
+            .map { ($0 as NSString).size(withAttributes: [.font: SplitBarStyle.font]).width }
+        return ceil(10 + 21 + text[0] + 5 + text[1] + 10)
     }
-    func closeDetails() { popover?.close(); popover = nil }
-    private func detailController() -> NSViewController {
-        let controller = NSViewController()
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 18, right: 20)
-        func label(_ text: String, size: CGFloat, color: NSColor = .labelColor, bold: Bool = false) -> NSTextField {
-            let field = NSTextField(wrappingLabelWithString: text)
-            field.font = .systemFont(ofSize: size, weight: bold ? .semibold : .regular)
-            field.textColor = color
-            field.preferredMaxLayoutWidth = 280
-            return field
-        }
-        stack.addArrangedSubview(label("CodexBar", size: 18, bold: true))
+
+    private struct Content {
+        let title: String
+        let logo: NSImage?
+        let subtitle: String
+        let value: String
+        let fraction: Double
+        let details: [SplitBarDropdown.Detail]
+    }
+
+    private var content: Content {
         let showUsed = status.snapshot?.showUsed == true
-        stack.addArrangedSubview(label(showUsed ? "Usage across your providers" : "Remaining across your providers", size: 11, color: .secondaryLabelColor))
-        for provider in status.snapshot?.visibleProviders ?? [] {
-            stack.addArrangedSubview(NSBox.separator())
-            stack.addArrangedSubview(label(provider.name, size: 13, bold: true))
-            if provider.windows?.isEmpty != false { stack.addArrangedSubview(label("Usage unavailable", size: 11, color: .secondaryLabelColor)) }
+        let providers = status.orderedProviders
+        let lead = providers.first
+        let leadPercent = lead?.windows?.first?.percent(showUsed: showUsed)
+        var details: [SplitBarDropdown.Detail] = []
+        for provider in providers {
             for window in provider.windows ?? [] {
-                let percent = window.percent(showUsed: showUsed)
-                let row = NSStackView()
-                row.orientation = .horizontal
-                row.addArrangedSubview(label(window.label, size: 12, color: .secondaryLabelColor))
-                row.addArrangedSubview(NSView())
-                let value = label("\(percent.map { "\(Int($0.rounded()))%" } ?? "—") \(showUsed ? "used" : "left")", size: 12, bold: true)
-                value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-                row.addArrangedSubview(value)
-                row.widthAnchor.constraint(equalToConstant: 280).isActive = true
-                stack.addArrangedSubview(row)
-                let meter = NSLevelIndicator(frame: .zero)
-                meter.levelIndicatorStyle = .continuousCapacity
-                meter.minValue = 0; meter.maxValue = 100
-                meter.warningValue = 101; meter.criticalValue = 101
-                meter.doubleValue = percent ?? 0
-                meter.fillColor = provider.id == "claude" ? .systemOrange : .systemMint
-                meter.heightAnchor.constraint(equalToConstant: 6).isActive = true
-                meter.widthAnchor.constraint(equalToConstant: 280).isActive = true
-                stack.addArrangedSubview(meter)
+                var value = window.percent(showUsed: showUsed).map { "\(Int($0.rounded()))%" } ?? "—"
                 if let raw = window.resetAt, let date = ISO8601DateFormatter().date(from: raw) {
-                    stack.addArrangedSubview(label("Resets \(date.formatted(date: .abbreviated, time: .shortened))", size: 10, color: .secondaryLabelColor))
+                    value += " · " + date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
                 }
+                details.append(.init(title: "\(provider.name) \(window.label.lowercased())", value: value,
+                                     symbol: "chart.bar", image: CodexBarStatus.logo(for: provider.id)))
             }
         }
-        if !status.message.isEmpty { stack.addArrangedSubview(label(status.message, size: 11, color: .secondaryLabelColor)) }
-        if let date = status.updatedAt { stack.addArrangedSubview(label("Updated \(date.formatted(date: .omitted, time: .shortened)) · refreshes every 3 min", size: 10, color: .tertiaryLabelColor)) }
-        let open = NSButton(title: "Open CodexBar ↗", target: self, action: #selector(openCodexBar))
-        open.bezelStyle = .rounded
-        stack.addArrangedSubview(open)
-        let scroll = NSScrollView()
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        stack.frame = CGRect(x: 0, y: 0, width: 320, height: stack.fittingSize.height)
-        scroll.documentView = stack
-        controller.view = scroll
-        controller.preferredContentSize = NSSize(width: 320, height: min(560, stack.fittingSize.height))
-        scroll.frame.size = controller.preferredContentSize
-        return controller
+        let subtitle = !status.message.isEmpty ? status.message
+            : status.updatedAt.map { "\(showUsed ? "Used" : "Left") · updated \($0.formatted(date: .omitted, time: .shortened))" }
+            ?? "Remaining across your providers"
+        return Content(title: lead?.name.uppercased() ?? "USAGE",
+                       logo: lead.flatMap { CodexBarStatus.logo(for: $0.id) }, subtitle: subtitle,
+                       value: leadPercent.map { "\(Int($0.rounded()))% \(showUsed ? "used" : "left")" } ?? "—",
+                       fraction: (leadPercent ?? 0) / 100, details: details)
     }
+
+    private func refresh(_ menu: NSMenu) {
+        let content = content
+        SplitBarDropdown.update(menu, title: content.title, subtitle: content.subtitle,
+                                symbol: "gauge.with.dots.needle.67percent", value: content.value,
+                                visual: .level(content.fraction), logo: content.logo, details: content.details)
+    }
+
+    @objc private func showDetails() {
+        let content = content
+        let menu = SplitBarDropdown.make(title: content.title, subtitle: content.subtitle,
+            symbol: "gauge.with.dots.needle.67percent", value: content.value,
+            visual: .level(content.fraction), logo: content.logo, details: content.details,
+            settingsTitle: "Open CodexBar…", settingsAction: #selector(openCodexBar), target: self)
+        self.dropdown = menu
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: self)
+        self.dropdown = nil
+    }
+    func closeDetails() { dropdown?.cancelTracking() }
     @objc private func openCodexBar() {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.steipete.codexbar") {
             NSWorkspace.shared.openApplication(at: url, configuration: .init())
         }
     }
-}
-
-private extension NSBox {
-    static func separator() -> NSBox { let box = NSBox(); box.boxType = .separator; return box }
 }
