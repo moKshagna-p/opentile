@@ -37,6 +37,18 @@ struct MusicArtworkTests {
         #expect(state.nextRetryDelay() == nil)
     }
 
+    @Test func albumLookupMatchesCatalogSuffixesAndLeadArtist() {
+        let url = URL(string: "https://is1-ssl.mzstatic.com/image/thumb/a/100x100bb.jpg")!
+        let other = MusicArtworkCatalog.Entry(trackName: nil, artistName: nil, collectionName: "Die Lit", artworkUrl100: url)
+        let single = MusicArtworkCatalog.Entry(trackName: nil, artistName: nil, collectionName: "Album - Single", artworkUrl100: url)
+        let untrusted = MusicArtworkCatalog.Entry(trackName: nil, artistName: nil, collectionName: "Album",
+                                                  artworkUrl100: URL(string: "http://example.com/a.jpg"))
+        #expect(MusicArtworkCatalog.albumArtworkURL(in: [other, untrusted], for: song()) == nil)
+        #expect(MusicArtworkCatalog.albumArtworkURL(in: [other, single], for: song()) == url)
+        #expect(MusicArtworkCatalog.leadArtist("Future, Metro Boomin & Travis Scott") == "Future")
+        #expect(MusicArtworkCatalog.leadArtist("Playboi Carti") == "Playboi Carti")
+    }
+
     @Test func catalogRequiresMatchingRecordingAndTrustedArtworkURL() {
         let url = URL(string: "https://is1-ssl.mzstatic.com/image/cover.jpg")!
         let wrongAlbum = MusicArtworkCatalog.Entry(trackName: "Song", artistName: "Artist", collectionName: "Live", artworkUrl100: url)

@@ -78,3 +78,69 @@ struct BatteryIndicator {
         return image
     }
 }
+
+/// Classic Pomodoro cycle. Times are absolute deadlines, so sleep or a late tick never drifts the clock.
+struct Pomodoro {
+    enum Phase: Equatable { case idle, focus, shortBreak, longBreak }
+    var focusLength: TimeInterval = 25 * 60
+    var shortBreakLength: TimeInterval = 5 * 60
+    var longBreakLength: TimeInterval = 15 * 60
+
+    private(set) var phase = Phase.idle
+    private(set) var endsAt: Date?
+    private(set) var pausedRemaining: TimeInterval?
+    private(set) var completedFocus = 0
+    var running: Bool { endsAt != nil }
+
+    var length: TimeInterval {
+        switch phase {
+        case .idle, .focus: focusLength
+        case .shortBreak: shortBreakLength
+        case .longBreak: longBreakLength
+        }
+    }
+
+    func remaining(at now: Date) -> TimeInterval {
+        endsAt.map { max(0, $0.timeIntervalSince(now)) } ?? pausedRemaining ?? length
+    }
+
+    func progress(at now: Date) -> Double { phase == .idle ? 0 : min(1, max(0, 1 - remaining(at: now) / length)) }
+
+    mutating func start(at now: Date) {
+        guard !running else { return }
+        if phase == .idle { phase = .focus }
+        endsAt = now.addingTimeInterval(pausedRemaining ?? length)
+        pausedRemaining = nil
+    }
+
+    mutating func pause(at now: Date) {
+        guard running else { return }
+        pausedRemaining = remaining(at: now)
+        endsAt = nil
+    }
+
+    mutating func reset() {
+        phase = .idle
+        endsAt = nil
+        pausedRemaining = nil
+    }
+
+    /// Focus rolls straight into its break (every fourth one long); a finished break waits for the next start.
+    mutating func finish(at now: Date) {
+        pausedRemaining = nil
+        switch phase {
+        case .focus:
+            completedFocus += 1
+            phase = completedFocus.isMultiple(of: 4) ? .longBreak : .shortBreak
+            endsAt = now.addingTimeInterval(length)
+        case .shortBreak, .longBreak, .idle:
+            phase = .idle
+            endsAt = nil
+        }
+    }
+
+    static func clock(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded(.up))
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}

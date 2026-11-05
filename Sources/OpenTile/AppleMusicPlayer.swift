@@ -160,75 +160,48 @@ struct MusicTrack {
     private let cover = NSButton()
     private let toggle = NSButton()
     private var subscription: AnyCancellable?
-    private let popover = NSPopover()
-    private let largeCover = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let artistLabel = NSTextField(wrappingLabelWithString: "")
+    private var dropdown: NSMenu!
     private var controls: [NSButton] = []
     private var artworkData: Data?
     private var hasArtwork = false
+    private var artwork: NSImage?
 
-    init(player: AppleMusicPlayer, width: CGFloat) {
+    static let width: CGFloat = 54
+
+    init(player: AppleMusicPlayer) {
         self.player = player
-        super.init(frame: NSRect(x: 8, y: 3, width: width, height: 22))
-        cover.frame = NSRect(x: 0, y: 0, width: max(24, width - 28), height: 22)
+        super.init(frame: NSRect(x: 8, y: 3, width: Self.width, height: 22))
+        // 9pt from each capsule edge, matching the status capsules.
+        cover.frame = NSRect(x: 9, y: 2, width: 18, height: 18)
         cover.isBordered = false
         cover.imagePosition = .imageOnly
         cover.imageScaling = .scaleProportionallyDown
-        cover.font = .systemFont(ofSize: 11, weight: .medium)
-        cover.lineBreakMode = .byTruncatingTail
         cover.target = self; cover.action = #selector(showPlayer)
-        cover.contentTintColor = .white
-        toggle.frame = NSRect(x: width - 24, y: 0, width: 24, height: 22)
+        toggle.frame = NSRect(x: 31, y: 0, width: 16, height: 22)
         toggle.isBordered = false
         toggle.target = self; toggle.action = #selector(playPause)
-        toggle.contentTintColor = .white
+        toggle.contentTintColor = SplitBarStyle.primary
+        toggle.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         addSubview(cover); addSubview(toggle)
-        let controller = NSViewController()
-        let surface = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 280, height: 172))
-        surface.material = .popover
-        surface.blendingMode = .behindWindow
-        surface.state = .active
-        controller.view = surface
 
-        let heading = NSTextField(labelWithString: "APPLE MUSIC")
-        heading.frame = NSRect(x: 104, y: 138, width: 156, height: 14)
-        heading.font = .systemFont(ofSize: 10, weight: .semibold)
-        heading.textColor = .secondaryLabelColor
-        surface.addSubview(heading)
-
-        largeCover.frame = NSRect(x: 16, y: 76, width: 72, height: 72)
-        largeCover.imageScaling = .scaleProportionallyUpOrDown
-        largeCover.wantsLayer = true
-        largeCover.layer?.cornerRadius = 10
-        largeCover.layer?.masksToBounds = true
-        largeCover.setAccessibilityLabel("Album artwork")
-        titleLabel.frame = NSRect(x: 104, y: 111, width: 160, height: 22)
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = .labelColor
-        titleLabel.alignment = .left
-        titleLabel.lineBreakMode = .byTruncatingTail
-        artistLabel.frame = NSRect(x: 104, y: 74, width: 160, height: 34)
-        artistLabel.font = .systemFont(ofSize: 12)
-        artistLabel.textColor = .secondaryLabelColor
-        artistLabel.alignment = .left
-        for view in [largeCover, titleLabel, artistLabel] { surface.addSubview(view) }
+        // Playback controls live in the same native dropdown the other bar items use.
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 46))
         for (index, symbol) in ["backward.end.fill", "play.fill", "forward.end.fill"].enumerated() {
             let label = ["Previous track", "Play or pause", "Next track"][index]
             let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: self, action: [#selector(previous), #selector(playPause), #selector(next)][index])
-            b.frame = NSRect(x: 56 + index * 60, y: 14, width: 48, height: 40)
+            b.frame = NSRect(x: 56 + index * 60, y: 3, width: 48, height: 40)
             b.bezelStyle = .regularSquare
             b.isBordered = false
             b.contentTintColor = .labelColor
-            b.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: index == 1 ? 23 : 17, weight: .semibold)
+            b.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: index == 1 ? 21 : 15, weight: .semibold)
             b.toolTip = label
             b.setAccessibilityLabel(label)
-            surface.addSubview(b)
+            row.addSubview(b)
             controls.append(b)
         }
-        popover.contentViewController = controller
-        popover.behavior = .transient
-        popover.animates = true
+        dropdown = SplitBarDropdown.make(title: "APPLE MUSIC", subtitle: "", symbol: "music.note", value: "",
+            visual: .none, details: [.init(title: "Album", value: "", symbol: "square.stack")],
+            extraViews: [row], settingsTitle: "Open Music…", settingsAction: #selector(openMusic), target: self)
         subscription = player.$track.combineLatest(player.$busy).sink { [weak self] track, busy in
             self?.update(track, busy: busy)
         }
@@ -236,34 +209,32 @@ struct MusicTrack {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func resize(to width: CGFloat) {
-        frame.size.width = width
-        cover.frame.size.width = max(24, width - 28)
-        toggle.frame.origin.x = width - 24
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { dropdown.cancelTracking() }
+        super.viewWillMove(toWindow: newWindow)
     }
 
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil { popover.performClose(nil) }
-        super.viewWillMove(toWindow: newWindow)
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.withAlphaComponent(0.075).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
     }
 
     private func update(_ track: MusicTrack, busy: Bool) {
         if !hasArtwork || artworkData != track.artwork {
             hasArtwork = true
             artworkData = track.artwork
-            let image = track.artwork.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: "Album artwork")!
-            largeCover.image = image
-            let thumbnail = NSImage(size: NSSize(width: 20, height: 20))
-            thumbnail.lockFocus()
-            image.draw(in: NSRect(x: 0, y: 0, width: 20, height: 20))
-            thumbnail.unlockFocus()
+            artwork = track.artwork.flatMap(NSImage.init(data:))
+            let image = artwork ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: "Album artwork")!.tinted(SplitBarStyle.primary)
+            let thumbnail = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+                NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).addClip()
+                image.draw(in: rect)
+                return true
+            }
             cover.image = thumbnail
         }
         cover.title = ""
         cover.toolTip = track.title + " — " + track.artist
         cover.setAccessibilityLabel(cover.toolTip)
-        titleLabel.stringValue = track.title
-        artistLabel.stringValue = track.artist
         let symbol = track.playing ? "pause.fill" : "play.fill"
         toggle.image = NSImage(systemSymbolName: symbol, accessibilityDescription: track.playing ? "Pause" : "Play")
         controls[1].image = toggle.image
@@ -271,18 +242,24 @@ struct MusicTrack {
         toggle.setAccessibilityLabel(playbackLabel)
         controls[1].setAccessibilityLabel(playbackLabel)
         controls[1].toolTip = playbackLabel
-        titleLabel.toolTip = track.title
-        artistLabel.toolTip = track.artist
         toggle.isEnabled = track.available && !busy
         controls.forEach { $0.isEnabled = track.available && !busy }
+        SplitBarDropdown.update(dropdown, title: !track.available ? "APPLE MUSIC" : track.playing ? "NOW PLAYING" : "PAUSED",
+            subtitle: track.artist, symbol: "music.note", value: track.available ? track.title : "Not playing",
+            visual: .none, artwork: artwork,
+            details: [.init(title: "Album", value: track.album.isEmpty ? "—" : track.album, symbol: "square.stack")])
     }
 
     @objc private func showPlayer() {
-        if popover.isShown { popover.performClose(nil); return }
-        popover.show(relativeTo: cover.bounds, of: cover, preferredEdge: .minY)
         player.refresh()
+        dropdown.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: self)
     }
     @objc private func playPause() { player.control(.toggle) }
     @objc private func previous() { player.control(.previous) }
     @objc private func next() { player.control(.next) }
+    @objc private func openMusic() {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Music") {
+            NSWorkspace.shared.openApplication(at: url, configuration: .init())
+        }
+    }
 }
