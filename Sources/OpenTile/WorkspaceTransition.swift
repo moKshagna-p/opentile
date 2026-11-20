@@ -90,13 +90,16 @@ import OpenTileCore
         guard let incoming, incoming.count == surfaces.count,
               panels.allSatisfy(\.isVisible) else { return false }
         trace("incoming captured")
+        // Capture succeeded; the slide outlives the stall watchdog, so stop it.
+        watchdog.cancel()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             CATransaction.begin()
             // Only the explicit translation below may animate. In particular,
             // the incoming contents must not fade in over the outgoing image.
             CATransaction.setDisableActions(true)
-            CATransaction.setAnimationDuration(0.18)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.16, 0.85, 0.22, 1))
+            // Ease-in-out: accelerates like a drop, then settles softly into place.
+            CATransaction.setAnimationDuration(0.42)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1))
             CATransaction.setCompletionBlock { continuation.resume() }
             for (surface, image) in zip(surfaces, incoming) {
                 let outgoing = surface.layer.sublayers!.first!
