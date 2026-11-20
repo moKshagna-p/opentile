@@ -45,6 +45,18 @@ final class SplitBarSurface: NSView {
 enum SplitBarStyle {
     static let primary = NSColor(calibratedWhite: 0.93, alpha: 1)
     static let secondary = NSColor(calibratedWhite: 0.56, alpha: 1)
+
+    /// Active workspace colour; theme scripts set it with
+    /// `defaults write com.mokshagna.opentile barAccentColor '#B576D8'`.
+    static var accent: NSColor { color(hex: UserDefaults.standard.string(forKey: "barAccentColor")) ?? .white }
+
+    static func color(hex: String?) -> NSColor? {
+        guard var digits = hex?.trimmingCharacters(in: .whitespaces) else { return nil }
+        if digits.hasPrefix("#") { digits.removeFirst() }
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255,
+                       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+    }
     static let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     static var rounded: NSFont {
         let base = NSFont.systemFont(ofSize: 12, weight: .semibold)
@@ -434,7 +446,7 @@ final class WorkspaceBarButton: NSButton {
             NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         }
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font!, .foregroundColor: active ? NSColor.white : SplitBarStyle.secondary
+            .font: font!, .foregroundColor: active ? SplitBarStyle.accent : SplitBarStyle.secondary
         ]
         let size = (title as NSString).size(withAttributes: attributes)
         (title as NSString).draw(at: NSPoint(x: 9, y: (bounds.height - size.height) / 2), withAttributes: attributes)
@@ -694,7 +706,9 @@ final class WorkspaceBarButton: NSButton {
 
     private func makePanel(_ frame: CGRect) -> BarPanel {
         let panel = BarPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.level = .floating
+        // macOS 27 keeps a full-width MenuBarAgent window at the status-bar level even
+        // when the menu bar auto-hides; anything lower loses every click to it.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenNone]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
