@@ -40,7 +40,7 @@ Trackpad support is experimental and uses Apple's private `MultitouchSupport` fr
 
 ## Desktop options
 
-- **Split menu bar:** workspace buttons, app icons, system controls, and a Pomodoro timer with adjustable focus and break lengths. Set the native menu bar to auto-hide in macOS settings before enabling it.
+- **Split menu bar:** workspace buttons, app icons, system controls, and a Pomodoro timer with adjustable focus and break lengths. Set the active workspace colour with `defaults write com.mokshagna.opentile barAccentColor '#RRGGBB'`. Set the native menu bar to auto-hide in macOS settings before enabling it.
 - **Wallpapers:** press **Control–Option–W** to browse `~/Pictures/Wallpapers`. Visible thumbnails take priority while browsing. Images apply to all connected displays; videos are converted to stills.
 - **Integrations:** optional [CodexBar](https://github.com/steipete/CodexBar) usage meters, led by the provider you are using, and Apple Music playback controls. Music requires Automation permission; artwork lookup may send track metadata to Apple's catalog.
 
