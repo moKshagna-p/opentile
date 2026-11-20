@@ -694,7 +694,9 @@ final class WorkspaceBarButton: NSButton {
 
     private func makePanel(_ frame: CGRect) -> BarPanel {
         let panel = BarPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.level = .floating
+        // macOS 27 keeps a full-width MenuBarAgent window at the status-bar level even
+        // when the menu bar auto-hides; anything lower loses every click to it.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenNone]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
