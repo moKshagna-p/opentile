@@ -4,6 +4,16 @@ import Testing
 @testable import OpenTile
 
 struct SplitMenuBarTests {
+    @Test func accentHexParsesAndRejectsJunk() throws {
+        let violet = try #require(SplitBarStyle.color(hex: "#B576D8"))
+        #expect(abs(violet.redComponent - 0xB5 / 255.0) < 0.001)
+        #expect(abs(violet.blueComponent - 0xD8 / 255.0) < 0.001)
+        #expect(SplitBarStyle.color(hex: "b576d8") != nil)
+        #expect(SplitBarStyle.color(hex: nil) == nil)
+        #expect(SplitBarStyle.color(hex: "#B576") == nil)
+        #expect(SplitBarStyle.color(hex: "#ZZZZZZ") == nil)
+    }
+
     @Test @MainActor func barSurfaceFadesIntoWallpaperAtBottom() throws {
         let surface = SplitBarSurface(frame: NSRect(x: 0, y: 0, width: 80, height: 28))
         let bitmap = try #require(NSBitmapImageRep(
